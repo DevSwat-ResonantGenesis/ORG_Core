@@ -1,0 +1,122 @@
+name: 🚀 Backend Deployment Request
+description: Request a backend production deployment
+title: "[DEPLOY-BACKEND] "
+labels: ["deployment", "production"]
+assignees:
+  - devops-team
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Backend Deployment Request
+        Use this template to request a backend production deployment.
+        
+        **For frontend deployments, use:** https://github.com/louienemesh/genesis2026_production_frontend/issues/new/choose
+        
+  - type: dropdown
+    id: deployment-type
+    attributes:
+      label: Deployment Type
+      description: What are you deploying?
+      options:
+        - Backend (Blue-Green)
+        - Hotfix (Emergency)
+        - Database Migration
+    validations:
+      required: true
+
+  - type: input
+    id: pr-number
+    attributes:
+      label: Pull Request Number
+      description: Link to the PR being deployed
+      placeholder: "#123"
+    validations:
+      required: true
+
+  - type: textarea
+    id: changes
+    attributes:
+      label: Changes Description
+      description: What changes are being deployed?
+      placeholder: |
+        - Added new backend API endpoint
+        - Fixed authentication service bug
+        - Updated backend dependencies
+        - Database schema changes
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: pre-deployment
+    attributes:
+      label: Pre-Deployment Checklist
+      description: Verify all prerequisites are met
+      options:
+        - label: Code reviewed and approved
+          required: true
+        - label: All tests passing
+          required: true
+        - label: Staging deployment successful
+          required: false
+        - label: Database migration tested (if applicable)
+          required: false
+        - label: Rollback plan documented
+          required: true
+        - label: Team notified
+          required: true
+
+  - type: dropdown
+    id: deployment-window
+    attributes:
+      label: Deployment Window
+      description: When should this be deployed?
+      options:
+        - Immediate (Low Traffic)
+        - Scheduled - Low Traffic Period
+        - Scheduled - Maintenance Window
+        - Emergency - ASAP
+    validations:
+      required: true
+
+  - type: textarea
+    id: rollback-plan
+    attributes:
+      label: Rollback Plan
+      description: How to rollback if issues occur
+      placeholder: |
+        Automatic rollback via blue-green script.
+        Manual rollback: Switch nginx to previous environment.
+    validations:
+      required: true
+
+  - type: input
+    id: runbook
+    attributes:
+      label: Runbook Reference
+      description: Link to deployment runbook
+      value: "runbooks/deployment-backend.md"
+
+  - type: textarea
+    id: monitoring
+    attributes:
+      label: Monitoring Plan
+      description: What will you monitor post-deployment?
+      placeholder: |
+        - Backend service error rates
+        - API response times
+        - Service health checks
+        - Database performance
+        - Container resource usage
+    validations:
+      required: true
+
+  - type: input
+    id: contact
+    attributes:
+      label: Primary Contact
+      description: Who is responsible for this deployment?
+      placeholder: "@username"
+    validations:
+      required: true

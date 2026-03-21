@@ -1,0 +1,204 @@
+# WebSocket Self-Healing Configuration
+# Extends self-healing to include WebSocket monitoring and recovery
+
+detection:
+  check_interval: 15  # seconds
+  max_retries: 3
+  
+  # WebSocket-specific error patterns
+  error_patterns:
+    # Connection failures
+    - pattern: "WebSocket.*connection.*failed"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "gateway"
+      
+    - pattern: "WebSocket.*connection.*refused"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "gateway"
+      
+    - pattern: "WebSocket.*timeout"
+      fix_level: 2
+      action: "websocket_config"
+      severity: "medium"
+      service: "gateway"
+      
+    # Handshake failures
+    - pattern: "WebSocket.*handshake.*failed"
+      fix_level: 2
+      action: "websocket_config"
+      severity: "medium"
+      service: "gateway"
+      
+    - pattern: "Upgrade.*header.*missing"
+      fix_level: 2
+      action: "websocket_config"
+      severity: "medium"
+      service: "gateway"
+      
+    # Connection pool issues
+    - pattern: "WebSocket.*pool.*exhausted"
+      fix_level: 2
+      action: "websocket_pool_reset"
+      severity: "medium"
+      service: "gateway"
+      
+    - pattern: "WebSocket.*connection.*limit"
+      fix_level: 2
+      action: "websocket_config"
+      severity: "medium"
+      service: "gateway"
+      
+    # Service-specific patterns
+    - pattern: "chat.*websocket.*error"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "chat_service"
+      
+    - pattern: "ide.*websocket.*error"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "ide_service"
+      
+    - pattern: "agent.*websocket.*error"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "agent_engine_service"
+      
+    - pattern: "ed.*websocket.*error"
+      fix_level: 1
+      action: "websocket_restart"
+      severity: "high"
+      service: "ed_service"
+
+# WebSocket-specific fixes
+fixes:
+  level_1_websocket_restart:
+    enabled: true
+    timeout: 30
+    actions:
+      - "restart_websocket_service"
+      - "verify_websocket_endpoints"
+      
+  level_2_websocket_config:
+    enabled: true
+    timeout: 60
+    actions:
+      - "backup_websocket_config"
+      - "reset_websocket_config"
+      - "restart_websocket_service"
+      - "verify_websocket_endpoints"
+      
+  level_2_websocket_pool_reset:
+    enabled: true
+    timeout: 60
+    actions:
+      - "reset_websocket_pools"
+      - "restart_websocket_service"
+      - "verify_websocket_endpoints"
+
+# WebSocket monitoring configuration
+monitoring:
+  websocket_endpoints:
+    - path: "/ws/credits/{user_id}"
+      service: "gateway"
+      health_check: true
+      
+    - path: "/ws/chat/{chat_id}"
+      service: "chat_service"
+      health_check: true
+      
+    - path: "/ws/ide/{session_id}"
+      service: "ide_service"
+      health_check: true
+      
+    - path: "/ws/agent/{session_id}"
+      service: "agent_engine_service"
+      health_check: true
+      
+    - path: "/ws/ed/{connection_id}"
+      service: "ed_service"
+      health_check: true
+      
+  connection_limits:
+    max_connections_per_service: 1000
+    connection_timeout: 30
+    ping_interval: 30
+    max_idle_time: 300
+    
+  health_checks:
+    endpoint_test_interval: 60
+    connection_pool_check_interval: 120
+    service_health_check_interval: 30
+    
+# WebSocket healing actions
+actions:
+  restart_websocket_service:
+    description: "Restart WebSocket service"
+    command: "docker-compose restart {service}"
+    
+  verify_websocket_endpoints:
+    description: "Verify WebSocket endpoints are accessible"
+    command: "./scripts/websocket_health_check.sh"
+    
+  backup_websocket_config:
+    description: "Backup WebSocket configuration"
+    command: "cp {config_file} {config_file}.backup"
+    
+  reset_websocket_config:
+    description: "Reset WebSocket configuration to defaults"
+    command: "cp {default_config} {config_file}"
+    
+  reset_websocket_pools:
+    description: "Reset WebSocket connection pools"
+    command: "curl -X POST http://localhost:8095/websocket/reset_pools"
+
+# WebSocket service dependencies
+dependencies:
+  gateway:
+    depends_on:
+      - "redis"
+      - "auth_service"
+      
+  chat_service:
+    depends_on:
+      - "redis"
+      - "auth_service"
+      - "memory_service"
+      
+  ide_service:
+    depends_on:
+      - "redis"
+      - "build_service"
+      - "code_execution_service"
+      
+  agent_engine_service:
+    depends_on:
+      - "redis"
+      - "llm_service"
+      - "memory_service"
+      
+  ed_service:
+    depends_on:
+      - "redis"
+      - "auth_service"
+      - "storage_service"
+
+# WebSocket healing notifications
+notifications:
+  enabled: true
+  channels:
+    - "slack"
+    - "email"
+    
+  events:
+    - "websocket_service_restarted"
+    - "websocket_config_reset"
+    - "websocket_pool_reset"
+    - "websocket_healing_failed"

@@ -1,0 +1,49 @@
+{{- if .Values.networkPolicies.enabled -}}
+# Default deny all ingress for the namespace
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "rg.fullname" . }}-default-deny
+  labels:
+    {{- include "rg.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  policyTypes:
+    - Ingress
+---
+# Allow gateway to receive external traffic from ingress controller
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "rg.fullname" . }}-gateway-ingress
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: gateway
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  ingress:
+    - from: []
+      ports:
+        - port: 8000
+          protocol: TCP
+---
+# Allow internal services to receive traffic only from gateway and other services
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "rg.fullname" . }}-internal-mesh
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: {{ .Release.Name }}
+      ports:
+        - port: 8000
+          protocol: TCP
+{{- end }}

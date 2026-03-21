@@ -1,0 +1,367 @@
+# =============================================================================
+# Resonant Genesis - Helm Values (Private Cloud Deployment)
+# =============================================================================
+# Override these values for your environment:
+#   helm install rg ./deploy/helm/resonant-genesis -f my-values.yaml
+# =============================================================================
+
+global:
+  # Container registry (change for private registries)
+  imageRegistry: "ghcr.io/resonantgenesis"
+  imageTag: "latest"
+  imagePullPolicy: IfNotPresent
+  imagePullSecrets: []
+
+  # Database (external PostgreSQL recommended for production)
+  database:
+    host: "postgres"
+    port: 5432
+    name: "resonant_genesis"
+    user: "rg_admin"
+    existingSecret: "rg-database-credentials"
+    secretKey: "password"
+
+  # Redis
+  redis:
+    host: "shared-redis"
+    port: 6379
+    existingSecret: ""
+
+  # Domain and TLS
+  domain: "resonantgenesis.xyz"
+  tls:
+    enabled: true
+    issuer: "letsencrypt-prod"
+
+  # Secrets (reference existing K8s secrets)
+  jwtSecret: "rg-jwt-secret"
+  encryptionKey: "rg-encryption-key"
+
+# =============================================================================
+# Infrastructure
+# =============================================================================
+
+redis:
+  enabled: true
+  architecture: standalone
+  auth:
+    enabled: false
+  persistence:
+    size: 2Gi
+
+# External PostgreSQL (set enabled: false if using managed DB)
+postgresql:
+  enabled: false
+
+# =============================================================================
+# Gateway (main entry point)
+# =============================================================================
+
+gateway:
+  replicas: 2
+  image:
+    repository: gateway
+    tag: ""  # defaults to global.imageTag
+  service:
+    type: ClusterIP
+    port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 6
+    targetCPUUtilization: 70
+
+# =============================================================================
+# Core Services
+# =============================================================================
+
+authService:
+  replicas: 2
+  image:
+    repository: auth_service
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+chatService:
+  replicas: 2
+  image:
+    repository: chat_service
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 1Gi
+
+llmService:
+  replicas: 2
+  image:
+    repository: llm_service
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+billingService:
+  replicas: 1
+  image:
+    repository: billing_service
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+memoryService:
+  replicas: 2
+  image:
+    repository: memory_service
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+userService:
+  replicas: 1
+  image:
+    repository: user_service
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# =============================================================================
+# Agent Engine (core autonomous agent runtime)
+# =============================================================================
+
+agentEngine:
+  replicas: 2
+  image:
+    repository: agent_engine_service
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilization: 60
+
+# =============================================================================
+# Workflow Service
+# =============================================================================
+
+workflowService:
+  replicas: 1
+  image:
+    repository: workflow_service
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# =============================================================================
+# Code Execution (sandbox)
+# =============================================================================
+
+codeExecution:
+  replicas: 1
+  image:
+    repository: code_execution_service
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+  # Requires Docker-in-Docker or Sysbox runtime
+  securityContext:
+    privileged: false
+
+# =============================================================================
+# Code Visualizer
+# =============================================================================
+
+codeVisualizer:
+  replicas: 1
+  image:
+    repository: code_visualizer_service
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+# =============================================================================
+# ED Service (dev tools)
+# =============================================================================
+
+edService:
+  replicas: 1
+  image:
+    repository: ed_service
+  resources:
+    requests:
+      cpu: 200m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+# =============================================================================
+# Marketplace Service
+# =============================================================================
+
+marketplaceService:
+  replicas: 1
+  image:
+    repository: marketplace_service
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# =============================================================================
+# Notification Service
+# =============================================================================
+
+notificationService:
+  replicas: 1
+  image:
+    repository: notification_service
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+# =============================================================================
+# Storage Service
+# =============================================================================
+
+storageService:
+  replicas: 1
+  image:
+    repository: storage_service
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+  persistence:
+    enabled: true
+    size: 50Gi
+    storageClass: ""
+
+# =============================================================================
+# Rabbit Services (community platform)
+# =============================================================================
+
+rabbitServices:
+  enabled: true
+  apiService:
+    replicas: 1
+    image:
+      repository: rabbit_api_service
+  communityService:
+    replicas: 1
+    image:
+      repository: rabbit_community_service
+  contentService:
+    replicas: 1
+    image:
+      repository: rabbit_content_service
+  moderationService:
+    replicas: 1
+    image:
+      repository: rabbit_moderation_service
+  voteService:
+    replicas: 1
+    image:
+      repository: rabbit_vote_service
+
+# =============================================================================
+# Ingress
+# =============================================================================
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+    nginx.ingress.kubernetes.io/websocket-services: "gateway"
+  hosts:
+    - host: "resonantgenesis.xyz"
+      paths:
+        - path: /api
+          pathType: Prefix
+          service: gateway
+        - path: /ws
+          pathType: Prefix
+          service: gateway
+  tls:
+    - secretName: rg-tls
+      hosts:
+        - "resonantgenesis.xyz"
+
+# =============================================================================
+# Monitoring (optional)
+# =============================================================================
+
+monitoring:
+  enabled: false
+  prometheus:
+    serviceMonitor: true
+  grafana:
+    dashboards: true
+
+# =============================================================================
+# Network Policies (multi-tenant isolation)
+# =============================================================================
+
+networkPolicies:
+  enabled: true

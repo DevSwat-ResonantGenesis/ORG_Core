@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/louienemesh/genesis2026_production_backend/tree/main/runbooks
+    about: View operational runbooks and documentation
+  - name: 💬 Team Chat
+    url: https://slack.com
+    about: For quick questions, use team chat
+  - name: 🚨 Emergency
+    url: https://pagerduty.com
+    about: For production emergencies, page on-call

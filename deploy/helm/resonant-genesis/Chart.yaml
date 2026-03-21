@@ -1,0 +1,14 @@
+apiVersion: v2
+name: resonant-genesis
+description: Resonant Genesis AI Agent Platform - Private Cloud Deployment
+type: application
+version: 1.0.0
+appVersion: "2026.03"
+keywords:
+  - ai-agents
+  - autonomous-agents
+  - agent-platform
+  - resonant-genesis
+maintainers:
+  - name: Resonant Genesis Team
+    url: https://resonantgenesis.xyz

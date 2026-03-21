@@ -1,0 +1,245 @@
+# Genesis2026 Platform - Default Helm Values
+# Override these in your environment-specific values files
+
+global:
+  environment: production
+  domain: dev-swat.com
+  imageRegistry: ghcr.io/devswat
+  imageTag: latest
+  imagePullPolicy: IfNotPresent
+
+# ============== CORE SERVICES ==============
+
+gateway:
+  replicaCount: 2
+  image:
+    repository: genesis2026-gateway
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+  env:
+    AUTH_FRONTEND_URL: "https://dev-swat.com"
+    TENANT_ISOLATION_ENABLED: "true"
+    TENANT_MAX_RPM: "600"
+
+authService:
+  replicaCount: 2
+  image:
+    repository: genesis2026-auth-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  env:
+    AUTH_ENVIRONMENT: production
+    AUTH_SAML_ENABLED: "false"
+    AUTH_REQUIRE_EMAIL_VERIFICATION: "true"
+
+agentEngine:
+  replicaCount: 2
+  image:
+    repository: genesis2026-agent-engine
+  port: 8000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+chatService:
+  replicaCount: 2
+  image:
+    repository: genesis2026-chat-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+workflowService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-workflow-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+llmService:
+  replicaCount: 2
+  image:
+    repository: genesis2026-llm-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 512Mi
+
+billingService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-billing-service
+  port: 8001
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 256Mi
+
+memoryService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-memory-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 512Mi
+    limits:
+      cpu: 1000m
+      memory: 2Gi
+
+codeVisualizerService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-code-visualizer
+  port: 8000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 512Mi
+    limits:
+      cpu: 2000m
+      memory: 2Gi
+
+cognitiveService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-cognitive-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+raraService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-rara-service
+  port: 8093
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+blockchainService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-blockchain-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 250m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+notificationService:
+  replicaCount: 1
+  image:
+    repository: genesis2026-notification-service
+  port: 8000
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+
+# ============== DATABASES ==============
+
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: ""  # Set via secret
+  primary:
+    persistence:
+      size: 20Gi
+
+redis:
+  enabled: true
+  auth:
+    password: ""  # Set via secret
+  master:
+    persistence:
+      size: 5Gi
+
+# ============== INGRESS ==============
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
+    nginx.ingress.kubernetes.io/websocket-services: gateway
+  hosts:
+    - host: api.dev-swat.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: gateway
+  tls:
+    - secretName: genesis2026-tls
+      hosts:
+        - api.dev-swat.com
+
+# ============== MONITORING ==============
+
+monitoring:
+  enabled: false
+  prometheus:
+    scrapeInterval: 30s
+  grafana:
+    enabled: false
+
+# ============== AUTOSCALING ==============
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilization: 70
+  targetMemoryUtilization: 80

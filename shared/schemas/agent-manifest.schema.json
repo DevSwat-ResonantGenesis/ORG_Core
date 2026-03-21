@@ -1,0 +1,386 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://resonantgenesis.ai/schemas/agent-manifest/v1",
+  "title": "AgentManifest",
+  "description": "ResonantGenesis Agent Manifest v1 Specification",
+  "type": "object",
+  "required": ["@context", "@type", "version", "agent", "code", "capabilities", "trust", "ownership", "signature"],
+  "properties": {
+    "@context": {
+      "type": "string",
+      "const": "https://resonantgenesis.ai/schemas/agent-manifest/v1"
+    },
+    "@type": {
+      "type": "string",
+      "const": "AgentManifest"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "Manifest spec version (semver)"
+    },
+    "agent": {
+      "$ref": "#/definitions/AgentInfo"
+    },
+    "code": {
+      "$ref": "#/definitions/CodeDescriptor"
+    },
+    "capabilities": {
+      "$ref": "#/definitions/Capabilities"
+    },
+    "trust": {
+      "$ref": "#/definitions/TrustConfig"
+    },
+    "ownership": {
+      "$ref": "#/definitions/Ownership"
+    },
+    "lineage": {
+      "$ref": "#/definitions/Lineage"
+    },
+    "signature": {
+      "$ref": "#/definitions/Signature"
+    }
+  },
+  "definitions": {
+    "AgentInfo": {
+      "type": "object",
+      "required": ["name", "description", "version", "category"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^dsid:resonant:(agent|user|org):[a-f0-9]{32,64}$",
+          "description": "DSID-P identifier"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 64,
+          "description": "Human-readable name"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 500,
+          "description": "Agent description"
+        },
+        "version": {
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+$",
+          "description": "Agent version (semver)"
+        },
+        "category": {
+          "type": "string",
+          "enum": ["assistant", "analyst", "coder", "researcher", "automator", "moderator", "custom"],
+          "description": "Agent category"
+        },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 32 },
+          "maxItems": 10,
+          "description": "Discovery tags"
+        },
+        "icon": {
+          "type": "string",
+          "description": "Icon URI (IPFS or data URI)"
+        }
+      }
+    },
+    "CodeDescriptor": {
+      "type": "object",
+      "required": ["runtime", "entrypoint", "source", "checksum"],
+      "properties": {
+        "runtime": {
+          "type": "string",
+          "enum": ["resonant-v1", "langchain-v1", "autogen-v1", "custom"],
+          "description": "Runtime identifier"
+        },
+        "entrypoint": {
+          "type": "string",
+          "description": "Main execution file"
+        },
+        "source": {
+          "$ref": "#/definitions/SourceLocation"
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$",
+          "description": "SHA-256 of source bundle"
+        },
+        "dependencies": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/Dependency" },
+          "description": "Required dependencies"
+        }
+      }
+    },
+    "SourceLocation": {
+      "type": "object",
+      "required": ["type", "uri"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["ipfs", "arweave", "https"],
+          "description": "Source type"
+        },
+        "uri": {
+          "type": "string",
+          "description": "Content URI"
+        },
+        "fallback": {
+          "type": "string",
+          "description": "Fallback URI"
+        }
+      }
+    },
+    "Dependency": {
+      "type": "object",
+      "required": ["name", "version"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Dependency name"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version constraint"
+        }
+      }
+    },
+    "Capabilities": {
+      "type": "object",
+      "required": ["tools", "providers"],
+      "properties": {
+        "tools": {
+          "type": "array",
+          "items": { "$ref": "#/definitions/ToolPermission" },
+          "description": "Required tool permissions"
+        },
+        "providers": {
+          "type": "array",
+          "items": { 
+            "type": "string",
+            "enum": ["openai", "anthropic", "google", "mistral", "groq", "local", "custom"]
+          },
+          "description": "AI providers used"
+        },
+        "memory": {
+          "$ref": "#/definitions/MemoryConfig"
+        },
+        "network": {
+          "$ref": "#/definitions/NetworkConfig"
+        }
+      }
+    },
+    "ToolPermission": {
+      "type": "object",
+      "required": ["tool", "access", "justification"],
+      "properties": {
+        "tool": {
+          "type": "string",
+          "enum": [
+            "filesystem",
+            "network.http",
+            "network.websocket",
+            "database",
+            "code.execute",
+            "memory.read",
+            "memory.write",
+            "agent.spawn",
+            "agent.communicate"
+          ],
+          "description": "Tool identifier"
+        },
+        "access": {
+          "type": "string",
+          "enum": ["read", "write", "execute"],
+          "description": "Access level"
+        },
+        "scope": {
+          "type": "string",
+          "description": "Scope restriction"
+        },
+        "justification": {
+          "type": "string",
+          "minLength": 10,
+          "maxLength": 200,
+          "description": "Why this permission is needed"
+        }
+      }
+    },
+    "MemoryConfig": {
+      "type": "object",
+      "required": ["persistence"],
+      "properties": {
+        "persistence": {
+          "type": "string",
+          "enum": ["none", "session", "permanent"],
+          "description": "Memory persistence level"
+        },
+        "maxAnchors": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000,
+          "description": "Max memory anchors"
+        },
+        "sharedWith": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "DSIDs with shared access"
+        }
+      }
+    },
+    "NetworkConfig": {
+      "type": "object",
+      "properties": {
+        "allowedDomains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Whitelisted domains"
+        },
+        "blockedDomains": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Blacklisted domains"
+        },
+        "maxConnections": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "description": "Max concurrent connections"
+        }
+      }
+    },
+    "TrustConfig": {
+      "type": "object",
+      "required": ["initialTier", "sandbox", "auditLevel"],
+      "properties": {
+        "initialTier": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4,
+          "description": "Starting trust tier"
+        },
+        "sandbox": {
+          "$ref": "#/definitions/SandboxConfig"
+        },
+        "auditLevel": {
+          "type": "string",
+          "enum": ["none", "basic", "full", "compliance"],
+          "description": "Required audit level"
+        },
+        "approvalRequired": {
+          "type": "boolean",
+          "description": "Require human approval"
+        }
+      }
+    },
+    "SandboxConfig": {
+      "type": "object",
+      "required": ["isolated"],
+      "properties": {
+        "isolated": {
+          "type": "boolean",
+          "description": "Run in isolation"
+        },
+        "maxExecutionTime": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3600,
+          "description": "Max execution seconds"
+        },
+        "maxMemory": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 8192,
+          "description": "Max memory MB"
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 1000000,
+          "description": "Max tokens per execution"
+        }
+      }
+    },
+    "Ownership": {
+      "type": "object",
+      "required": ["owner", "license"],
+      "properties": {
+        "owner": {
+          "type": "string",
+          "pattern": "^dsid:resonant:(user|org):[a-f0-9]{32,64}$",
+          "description": "Owner DSID-P"
+        },
+        "publisher": {
+          "type": "string",
+          "pattern": "^dsid:resonant:(user|org):[a-f0-9]{32,64}$",
+          "description": "Publisher DSID-P"
+        },
+        "license": {
+          "type": "string",
+          "description": "SPDX license identifier"
+        },
+        "transferable": {
+          "type": "boolean",
+          "description": "Can ownership transfer"
+        },
+        "royalty": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Royalty percentage"
+        }
+      }
+    },
+    "Lineage": {
+      "type": "object",
+      "required": ["createdAt"],
+      "properties": {
+        "parent": {
+          "type": "string",
+          "pattern": "^0x[a-f0-9]{64}$",
+          "description": "Parent manifest hash"
+        },
+        "ancestors": {
+          "type": "array",
+          "items": { 
+            "type": "string",
+            "pattern": "^0x[a-f0-9]{64}$"
+          },
+          "description": "Full ancestor chain"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp"
+        },
+        "changelog": {
+          "type": "string",
+          "maxLength": 1000,
+          "description": "Version changelog"
+        }
+      }
+    },
+    "Signature": {
+      "type": "object",
+      "required": ["algorithm", "publicKey", "value"],
+      "properties": {
+        "algorithm": {
+          "type": "string",
+          "enum": ["ed25519", "secp256k1"],
+          "description": "Signature algorithm"
+        },
+        "publicKey": {
+          "type": "string",
+          "pattern": "^0x[a-f0-9]{64}$",
+          "description": "Hex-encoded public key"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^0x[a-f0-9]{128}$",
+          "description": "Hex-encoded signature"
+        }
+      }
+    }
+  }
+}

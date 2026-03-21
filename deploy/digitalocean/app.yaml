@@ -1,0 +1,147 @@
+# Digital Ocean App Platform Configuration
+# Deploy ResonantGenesis Backend Services
+
+name: resonantgenesis-backend
+
+services:
+  # Gateway Service (Main API)
+  - name: gateway
+    dockerfile_path: gateway/Dockerfile
+    source_dir: /
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    routes:
+      - path: /
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: REDIS_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: JWT_SECRET
+        scope: RUN_TIME
+        type: SECRET
+      - key: OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: ENVIRONMENT
+        value: production
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+
+  # Agent Engine Service
+  - name: agent-engine
+    dockerfile_path: agent_engine_service/Dockerfile
+    source_dir: /
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    internal_ports:
+      - 8000
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: REDIS_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: LLM_SERVICE_URL
+        value: ${llm-service.PRIVATE_URL}
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 15
+      period_seconds: 30
+
+  # LLM Service
+  - name: llm-service
+    dockerfile_path: llm_service/Dockerfile
+    source_dir: /
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    internal_ports:
+      - 8000
+    envs:
+      - key: LLM_OPENAI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: LLM_ANTHROPIC_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: LLM_DEFAULT_PROVIDER
+        value: openai
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+
+  # Memory Service
+  - name: memory-service
+    dockerfile_path: memory_service/Dockerfile
+    source_dir: /
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    internal_ports:
+      - 8000
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: REDIS_URL
+        scope: RUN_TIME
+        type: SECRET
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+
+  # Chat Service
+  - name: chat-service
+    dockerfile_path: chat_service/Dockerfile
+    source_dir: /
+    http_port: 8000
+    instance_count: 1
+    instance_size_slug: professional-xs
+    internal_ports:
+      - 8000
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
+      - key: MEMORY_SERVICE_URL
+        value: ${memory-service.PRIVATE_URL}
+      - key: LLM_SERVICE_URL
+        value: ${llm-service.PRIVATE_URL}
+    health_check:
+      http_path: /health
+      initial_delay_seconds: 10
+      period_seconds: 30
+
+databases:
+  - name: resonantgenesis-db
+    engine: PG
+    version: "15"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+
+  - name: resonantgenesis-redis
+    engine: REDIS
+    version: "7"
+    size: db-s-1vcpu-1gb
+    num_nodes: 1
+
+alerts:
+  - rule: DEPLOYMENT_FAILED
+  - rule: DOMAIN_FAILED
+  - rule: HTTP_RESPONSE_TIME_P99
+    value: 5000
+    operator: GREATER_THAN
+    window: FIVE_MINUTES

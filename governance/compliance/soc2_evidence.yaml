@@ -1,0 +1,300 @@
+# ============================================================================
+# SOC 2 TYPE II COMPLIANCE EVIDENCE PACK
+# ============================================================================
+# Auditor-ready evidence mapping for SOC 2 Trust Services Criteria
+#
+# STATUS: ACTIVE
+# GENERATED: 2025-12-21
+# SYSTEM: ResonantGenesis
+# TRUST SERVICES CATEGORIES: Security, Availability, Processing Integrity,
+#                            Confidentiality, Privacy
+# ============================================================================
+
+schema_version: "1.0.0"
+framework: "SOC 2 Type II"
+system_name: "ResonantGenesis"
+assessment_date: "2025-12-21"
+assessment_period: "2025-12-21 to present"
+assessor: "Governance Engine"
+
+# ============================================================================
+# CC6 - LOGICAL AND PHYSICAL ACCESS CONTROLS
+# ============================================================================
+cc6:
+  title: "Logical and Physical Access Controls"
+  status: "COMPLIANT"
+  
+  criteria:
+    - id: "CC6.1"
+      criterion: "The entity implements logical access security software"
+      evidence:
+        - artifact: "governance/capability_grammar.yaml"
+          description: "15 capabilities with explicit allow/deny rules"
+          control_type: "Preventive"
+        - artifact: "rara_service/app/capability_enforcer.py"
+          description: "Runtime enforcement of capability grammar"
+          control_type: "Preventive"
+        - artifact: "auth_service"
+          description: "Authentication and authorization service"
+          control_type: "Preventive"
+      test_procedures:
+        - "Verify capability grammar is loaded at service startup"
+        - "Attempt unauthorized capability - confirm rejection"
+        - "Review capability enforcer logs for denial events"
+      compliance_notes: "Capability grammar = access policy, enforced at runtime"
+      
+    - id: "CC6.2"
+      criterion: "Prior to issuing system credentials, the entity registers authorized users"
+      evidence:
+        - artifact: "auth_service/app/main.py"
+          description: "User registration with email verification"
+        - artifact: "contracts/api_contracts.json#/auth/register"
+          description: "Registration contract with required fields"
+      test_procedures:
+        - "Verify registration requires email, password, username"
+        - "Confirm duplicate email rejection"
+      compliance_notes: "Registration enforced via API contract"
+      
+    - id: "CC6.3"
+      criterion: "The entity authorizes, modifies, or removes access based on roles"
+      evidence:
+        - artifact: "governance/capability_grammar.yaml#risk_levels"
+          description: "Role-based capability restrictions"
+        - artifact: "governance/capability_grammar.yaml#environments"
+          description: "Environment-specific access controls"
+      test_procedures:
+        - "Verify dev vs prod capability differences"
+        - "Confirm critical actions require elevated approval"
+      compliance_notes: "Environment-based access control with escalation"
+      
+    - id: "CC6.6"
+      criterion: "The entity implements controls to prevent unauthorized access"
+      evidence:
+        - artifact: "governance/federation/treaty_validator.py"
+          description: "Treaty-based cross-system access control"
+        - artifact: "governance/capability_grammar.yaml#denied_paths"
+          description: "Explicit path denials"
+      test_procedures:
+        - "Attempt cross-droplet request without treaty - confirm rejection"
+        - "Attempt access to denied path - confirm rejection"
+      compliance_notes: "No transitive trust, explicit denials enforced"
+
+# ============================================================================
+# CC7 - SYSTEM OPERATIONS
+# ============================================================================
+cc7:
+  title: "System Operations"
+  status: "COMPLIANT"
+  
+  criteria:
+    - id: "CC7.1"
+      criterion: "The entity uses detection and monitoring procedures"
+      evidence:
+        - artifact: "code_visualizer_service"
+          description: "Real-time code structure analysis"
+        - artifact: "rara_service/app/invariant_engine.py"
+          description: "Invariant monitoring and violation detection"
+        - artifact: "hash_sphere_service"
+          description: "State change monitoring"
+      test_procedures:
+        - "Trigger invariant violation - confirm detection and logging"
+        - "Review Code Visualizer analysis results"
+      compliance_notes: "Multi-layer monitoring via Visualizer, RARA, Hash Sphere"
+      
+    - id: "CC7.2"
+      criterion: "The entity monitors system components for anomalies"
+      evidence:
+        - artifact: "rara_service/app/kill_switch.py#auto_trigger_conditions"
+          description: "Automatic anomaly detection triggers"
+        - artifact: "governance/scc/semantic_diff.py"
+          description: "Semantic change detection"
+      test_procedures:
+        - "Verify kill switch triggers on repeated failures"
+        - "Confirm semantic diff generation on code changes"
+      compliance_notes: "Automatic anomaly detection with kill switch"
+      
+    - id: "CC7.3"
+      criterion: "The entity evaluates security events"
+      evidence:
+        - artifact: "rara_service/app/governance_engine.py#_log_decision"
+          description: "Governance decision logging"
+        - artifact: "governance/federation/treaty_validator.py#violation_log"
+          description: "Treaty violation logging"
+      test_procedures:
+        - "Review governance logs for security events"
+        - "Verify violation logs contain required fields"
+      compliance_notes: "All security events logged with full context"
+      
+    - id: "CC7.4"
+      criterion: "The entity responds to identified security incidents"
+      evidence:
+        - artifact: "rara_service/app/kill_switch.py"
+          description: "Emergency response capability"
+        - artifact: "rara_service/app/snapshot_engine.py"
+          description: "Rollback capability for incident recovery"
+      test_procedures:
+        - "Trigger kill switch - confirm system freeze"
+        - "Execute rollback - confirm state restoration"
+      compliance_notes: "Kill switch and rollback provide incident response"
+
+# ============================================================================
+# CC8 - CHANGE MANAGEMENT
+# ============================================================================
+cc8:
+  title: "Change Management"
+  status: "COMPLIANT"
+  
+  criteria:
+    - id: "CC8.1"
+      criterion: "The entity authorizes, designs, develops, configures, documents, tests, approves, and implements changes"
+      evidence:
+        - artifact: "governance/scc/semantic_unit_schema.yaml"
+          description: "Semantic change control schema"
+        - artifact: "governance/scc/semantic_diff.py"
+          description: "Automatic semantic diff generation"
+        - artifact: "governance/stub_graduation_criteria.yaml"
+          description: "Module graduation workflow"
+      test_procedures:
+        - "Verify semantic diff required for MAJOR changes"
+        - "Confirm grammar diff required for capability expansion"
+        - "Review graduation workflow documentation"
+      compliance_notes: "Semantic change control enforces change management"
+      
+    - id: "CC8.2"
+      criterion: "The entity tests changes before implementation"
+      evidence:
+        - artifact: "governance/scc/semantic_diff.py#validate_change"
+          description: "Change validation before commit"
+        - artifact: "rara_service/app/invariant_engine.py"
+          description: "Invariant testing before mutation"
+      test_procedures:
+        - "Attempt change without grammar diff - confirm rejection"
+        - "Verify invariant check runs before mutation commit"
+      compliance_notes: "Validation is mandatory and automated"
+      
+    - id: "CC8.3"
+      criterion: "The entity implements approved changes"
+      evidence:
+        - artifact: "rara_service/app/snapshot_engine.py"
+          description: "Snapshot before every mutation"
+        - artifact: "hash_sphere_service"
+          description: "Immutable change record"
+      test_procedures:
+        - "Verify snapshot created before mutation"
+        - "Confirm Hash Sphere records change"
+      compliance_notes: "All changes are snapshotted and recorded"
+
+# ============================================================================
+# CC9 - RISK MITIGATION
+# ============================================================================
+cc9:
+  title: "Risk Mitigation"
+  status: "COMPLIANT"
+  
+  criteria:
+    - id: "CC9.1"
+      criterion: "The entity identifies, selects, and develops risk mitigation activities"
+      evidence:
+        - artifact: "governance/capability_grammar.yaml#risk_levels"
+          description: "Risk level definitions with mitigation requirements"
+        - artifact: "governance/scc/semantic_diff.py#RiskDelta"
+          description: "Risk delta assessment"
+      test_procedures:
+        - "Review risk level definitions"
+        - "Verify risk delta calculation for semantic changes"
+      compliance_notes: "Risk levels drive mitigation requirements"
+      
+    - id: "CC9.2"
+      criterion: "The entity assesses and manages risks from vendors"
+      evidence:
+        - artifact: "governance/federation/treaty_schema.yaml"
+          description: "Federation treaty requirements"
+        - artifact: "governance/federation/treaty_validator.py"
+          description: "Treaty enforcement with violation tracking"
+      test_procedures:
+        - "Review treaty constraint definitions"
+        - "Verify violation threshold and auto-revoke"
+      compliance_notes: "Treaty-based vendor/partner risk management"
+
+# ============================================================================
+# CC10 - MONITORING ACTIVITIES
+# ============================================================================
+cc10:
+  title: "Monitoring Activities"
+  status: "COMPLIANT"
+  
+  criteria:
+    - id: "CC10.1"
+      criterion: "The entity selects, develops, and performs ongoing evaluations"
+      evidence:
+        - artifact: "code_visualizer_service"
+          description: "Continuous code structure analysis"
+        - artifact: "rara_service/app/invariant_engine.py"
+          description: "Continuous invariant enforcement"
+        - artifact: "contracts/validate_contracts.py"
+          description: "API contract validation"
+      test_procedures:
+        - "Run contract validation - confirm all pass"
+        - "Review Code Visualizer analysis frequency"
+      compliance_notes: "Continuous monitoring via Visualizer and invariants"
+      
+    - id: "CC10.2"
+      criterion: "The entity evaluates and communicates deficiencies"
+      evidence:
+        - artifact: "governance/scc/semantic_diff.py"
+          description: "Semantic diff with risk assessment"
+        - artifact: "rara_service/app/governance_engine.py"
+          description: "Governance decision logging with reasons"
+      test_procedures:
+        - "Review semantic diff output for risk communication"
+        - "Verify governance logs include rejection reasons"
+      compliance_notes: "Deficiencies are logged with full context"
+
+# ============================================================================
+# EVIDENCE SUMMARY
+# ============================================================================
+summary:
+  total_criteria_assessed: 15
+  compliant: 15
+  partially_compliant: 0
+  non_compliant: 0
+  
+  control_mapping:
+    capability_grammar:
+      criteria: ["CC6.1", "CC6.3", "CC9.1"]
+      control_type: "Preventive"
+    semantic_change_control:
+      criteria: ["CC8.1", "CC8.2", "CC10.2"]
+      control_type: "Preventive/Detective"
+    kill_switch:
+      criteria: ["CC7.4"]
+      control_type: "Corrective"
+    hash_sphere:
+      criteria: ["CC7.1", "CC8.3", "CC10.1"]
+      control_type: "Detective"
+    federation_treaties:
+      criteria: ["CC6.6", "CC9.2"]
+      control_type: "Preventive"
+    invariant_engine:
+      criteria: ["CC7.1", "CC7.2", "CC10.1"]
+      control_type: "Detective/Preventive"
+      
+  auditor_notes: |
+    This system implements controls that are:
+    
+    1. Machine-enforced (not policy-dependent)
+    2. Continuously monitored (not periodic)
+    3. Automatically documented (not manually maintained)
+    4. Immutably recorded (not editable)
+    
+    Key strengths:
+    - Semantic change control prevents unauthorized capability expansion
+    - Treaty-based federation eliminates transitive trust risks
+    - Automatic rollback provides rapid incident recovery
+    - Hash Sphere provides tamper-evident audit trail
+    
+    Recommend:
+    - Annual penetration testing
+    - Quarterly treaty review
+    - Monthly governance log review
+    - Continuous invariant monitoring

@@ -1,0 +1,215 @@
+server {
+    listen 80;
+    server_name resonantgenesis.xyz www.resonantgenesis.xyz;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name resonantgenesis.xyz www.resonantgenesis.xyz;
+
+    ssl_certificate /etc/letsencrypt/live/resonantgenesis.xyz/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/resonantgenesis.xyz/privkey.pem;
+
+    # Serve frontend files
+    root /var/www/frontend;
+    index index.html;
+
+    client_max_body_size 200m;
+
+    # Prevent caching of runtime env module (ensures clients always pick up fixes)
+    location ~* ^/assets/env-.*\.js$ {
+        root /var/www/frontend;
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+        add_header Pragma "no-cache" always;
+        expires -1;
+        try_files $uri =404;
+    }
+
+    location = /index.html {
+        add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;
+        add_header Pragma "no-cache" always;
+        expires -1;
+        try_files $uri =404;
+    }
+
+    location /assets/ {
+        try_files $uri =404;
+        add_header Cache-Control "public, max-age=31536000, immutable" always;
+    }
+
+    # WebSocket proxy (Resonant chat)
+    location /ws/ {
+        proxy_pass http://localhost:8001/api/v1/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # SPA routing
+    # Proxy Resonant Chat API endpoints (frontend calls /resonant-chat/*)
+    location = /resonant-chat {
+        try_files /index.html =404;
+    }
+
+    location = /resonant-chat/ {
+        return 301 /resonant-chat;
+    }
+
+    location ^~ /resonant-chat/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Preview proxy (dynamic preview servers)
+    location ^~ /preview/proxy/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /memory/ {
+        return 307 /api/v1$uri$is_args$args;
+    }
+
+    location = /state-physics {
+        return 302 /api/v1/state-physics/ui;
+    }
+    location = /state-physics/ {
+        return 302 /api/v1/state-physics/ui;
+    }
+
+    location = /hash-sphere {
+        return 302 /api/v1/memory/visualizer/hash-sphere;
+    }
+    location = /hash-sphere/ {
+        return 302 /api/v1/memory/visualizer/hash-sphere;
+    }
+    # OAuth endpoints (must hit gateway, not SPA)
+    location ^~ /oauth/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Proxy API calls to gateway
+    location ^~ /api/v1/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+    }
+
+    location ^~ /api/auth/ {
+        proxy_pass http://localhost:8001/api/v1/api/auth/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /api/billing/ {
+        rewrite ^/api/billing/(.*)$ /api/v1/api/billing/$1 break;
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location = /api/state-physics {
+        return 302 /api/v1/state-physics/ui;
+    }
+    location = /api/state-physics/ {
+        return 302 /api/v1/state-physics/ui;
+    }
+
+    location /api/ {
+        rewrite ^/api/(.*)$ /api/v1/$1 break;
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 600s;
+        proxy_read_timeout 600s;
+    }
+
+    location /health {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /docs {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /openapi.json {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location ^~ /billing/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /auth/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location /user/ {
+        proxy_pass http://localhost:8001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}

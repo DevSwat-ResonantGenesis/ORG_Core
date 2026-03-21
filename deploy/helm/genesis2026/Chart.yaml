@@ -1,0 +1,14 @@
+apiVersion: v2
+name: genesis2026
+description: Genesis2026 AI Agent Platform - Helm Chart
+type: application
+version: 1.0.0
+appVersion: "2026.3"
+keywords:
+  - ai-agents
+  - workflow
+  - llm
+  - multi-tenant
+maintainers:
+  - name: DevSwat
+    url: https://dev-swat.com

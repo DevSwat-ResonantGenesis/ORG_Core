@@ -1,0 +1,91 @@
+# ============================================================================
+# SEMANTIC UNIT REGISTRY: full_autonomy
+# ============================================================================
+schema_version: "1.0.0"
+
+module:
+  path: "agent_engine_service/app/full_autonomy.py"
+  name: "full_autonomy"
+  status: "GRADUATED"
+  graduated_at: "2025-12-21"
+  semantic_version: "1.0.0"
+
+semantic_units:
+  - id: full_autonomy.set_level
+    capability: agent.autonomy.configure
+    description: "Set autonomy level for an agent"
+    inputs:
+      - type: string
+        description: "Agent ID"
+      - type: AutonomyLevel
+        description: "Target autonomy level"
+    outputs:
+      - type: bool
+        description: "Success status"
+    side_effects:
+      - memory.write
+      - log.write
+    forbidden_effects:
+      - filesystem.write
+      - network.egress
+    invariants:
+      - "Level changes are logged"
+      - "Forbidden actions list enforced"
+    confidence_required: 0.9
+
+  - id: full_autonomy.execute_action
+    capability: agent.autonomy.execute
+    description: "Execute an autonomous action within budget"
+    inputs:
+      - type: string
+        description: "Agent ID"
+      - type: ActionRequest
+        description: "Action to execute"
+    outputs:
+      - type: ActionResult
+        description: "Execution result"
+    side_effects:
+      - memory.read
+      - memory.write
+      - log.write
+      - state.mutate
+    forbidden_effects:
+      - filesystem.delete
+      - network.egress
+    invariants:
+      - "Budget limits enforced"
+      - "Forbidden actions never executed"
+      - "All actions logged for audit"
+    confidence_required: 0.9
+
+  - id: full_autonomy.get_audit_log
+    capability: agent.autonomy.audit
+    description: "Retrieve audit log for agent actions"
+    inputs:
+      - type: string
+        description: "Agent ID"
+      - type: int
+        nullable: true
+        description: "Limit"
+    outputs:
+      - type: List[AuditEntry]
+        max_count: 1000
+        description: "Audit entries"
+    side_effects:
+      - memory.read
+      - log.write
+    forbidden_effects:
+      - memory.write
+      - filesystem.write
+      - network.egress
+    invariants:
+      - "Read-only operation"
+      - "Audit log immutable"
+    confidence_required: 0.5
+
+change_history:
+  - version: "1.0.0"
+    date: "2025-12-21"
+    change_type: "MAJOR"
+    description: "Initial graduation from stub"
+    approved_by: "governance_engine"

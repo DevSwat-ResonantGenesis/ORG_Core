@@ -1,0 +1,111 @@
+name: 🐛 Backend Bug Report
+description: Report a backend bug or service issue
+title: "[BUG-BACKEND] "
+labels: ["bug", "backend", "needs-triage"]
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## Backend Bug Report
+        Report backend bugs to help us improve the system.
+        
+        **For frontend bugs, use:** https://github.com/louienemesh/genesis2026_production_frontend/issues/new/choose
+        
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      description: How severe is this bug?
+      options:
+        - P0 - Critical (Complete Outage)
+        - P1 - High (Major Feature Broken)
+        - P2 - Medium (Minor Issue)
+        - P3 - Low (Cosmetic/Nice to Have)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Affected Backend Component
+      description: Which backend service/component is affected?
+      options:
+        - Gateway
+        - Auth Service
+        - LLM Service
+        - Database
+        - Blockchain Service
+        - Agent Engine
+        - Memory Service
+        - Deployment System
+        - Infrastructure
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Bug Description
+      description: Clear description of the bug
+      placeholder: What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How to reproduce this bug
+      placeholder: |
+        1. Go to...
+        2. Click on...
+        3. See error...
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      description: What should happen?
+      placeholder: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Error Logs
+      description: Relevant error logs or stack traces
+      placeholder: Paste error logs here
+      render: shell
+
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: Where did this occur?
+      placeholder: "Production / Staging / Local"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: ai-agent-safe
+    attributes:
+      label: AI Agent Assignment
+      description: Can an AI agent work on this?
+      options:
+        - label: Safe for AI agent to investigate
+        - label: Safe for AI agent to fix
+        - label: Requires human review before deployment

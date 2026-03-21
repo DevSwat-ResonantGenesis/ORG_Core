@@ -1,0 +1,199 @@
+# ============================================================================
+# FEDERATION TREATY SCHEMA v1.0.0
+# ============================================================================
+# Machine-readable schema for cross-droplet governance treaties.
+# Treaties are signed, immutable contracts between Sovereign Execution Domains.
+#
+# STATUS: ACTIVE
+# CREATED: 2025-12-21
+# GOVERNANCE: Treaty-based federation, not trust-based.
+# ============================================================================
+
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://resonantgenesis.ai/schemas/federation-treaty/v1"
+title: "Federation Treaty"
+description: "Schema for cross-droplet governance treaties"
+
+definitions:
+  dsid:
+    type: string
+    pattern: "^[a-z0-9-]+$"
+    description: "Droplet Sovereign ID"
+    
+  capability_reference:
+    type: string
+    pattern: "^[a-z]+\\.[a-z_]+$"
+    description: "Capability from grammar (e.g., agent.task.request)"
+    
+  direction:
+    type: string
+    pattern: "^[a-z0-9-]+ → [a-z0-9-]+$"
+    description: "Direction of allowed interaction"
+    
+  trust_level:
+    type: string
+    enum:
+      - "none"
+      - "minimal"
+      - "standard"
+      - "elevated"
+      - "full"
+    description: "Trust level between parties"
+
+type: object
+properties:
+  schema_version:
+    const: "1.0.0"
+    
+  treaty:
+    type: object
+    properties:
+      treaty_id:
+        type: string
+        pattern: "^fed-[a-z0-9-]+-[a-z0-9-]+$"
+        description: "Unique treaty identifier"
+      created_at:
+        type: string
+        format: date-time
+      expires_at:
+        type: string
+        format: date-time
+        nullable: true
+      status:
+        type: string
+        enum: ["draft", "active", "suspended", "revoked", "expired"]
+      treaty_hash:
+        type: string
+        description: "SHA-256 hash of treaty content"
+      hash_sphere_anchor:
+        type: string
+        description: "Hash Sphere node ID anchoring this treaty"
+    required: ["treaty_id", "created_at", "status", "treaty_hash"]
+    
+  parties:
+    type: array
+    minItems: 2
+    maxItems: 2
+    items:
+      type: object
+      properties:
+        dsid:
+          $ref: "#/definitions/dsid"
+        name:
+          type: string
+        grammar_hash:
+          type: string
+          description: "Hash of party's capability grammar"
+        governance_policy_hash:
+          type: string
+          description: "Hash of party's governance policy"
+        trust_level:
+          $ref: "#/definitions/trust_level"
+        public_key:
+          type: string
+          description: "Public key for signature verification"
+      required: ["dsid", "grammar_hash", "governance_policy_hash", "trust_level"]
+      
+  allowed_interactions:
+    type: array
+    items:
+      type: object
+      properties:
+        capability:
+          $ref: "#/definitions/capability_reference"
+        direction:
+          $ref: "#/definitions/direction"
+        constraints:
+          type: object
+          properties:
+            max_requests_per_minute:
+              type: integer
+              minimum: 1
+            max_requests_per_day:
+              type: integer
+              minimum: 1
+            max_payload_size:
+              type: integer
+              description: "Maximum payload size in bytes"
+            confidence_min:
+              type: number
+              minimum: 0.0
+              maximum: 1.0
+            readonly:
+              type: boolean
+            require_approval:
+              type: boolean
+            allowed_targets:
+              type: array
+              items:
+                type: string
+            denied_targets:
+              type: array
+              items:
+                type: string
+      required: ["capability", "direction"]
+      
+  forbidden:
+    type: array
+    items:
+      type: string
+      description: "Forbidden capability patterns (supports wildcards)"
+      
+  termination:
+    type: object
+    properties:
+      auto_revoke_on_violation:
+        type: boolean
+        default: true
+      violation_threshold:
+        type: integer
+        default: 3
+        description: "Number of violations before auto-revoke"
+      cooldown_hours:
+        type: integer
+        default: 24
+        description: "Hours before treaty can be re-established"
+      requires_mutual_consent:
+        type: boolean
+        default: true
+    required: ["auto_revoke_on_violation"]
+    
+  signatures:
+    type: array
+    items:
+      type: object
+      properties:
+        party_dsid:
+          $ref: "#/definitions/dsid"
+        signature:
+          type: string
+          description: "Cryptographic signature"
+        signed_at:
+          type: string
+          format: date-time
+        algorithm:
+          type: string
+          enum: ["ed25519", "rsa-sha256"]
+      required: ["party_dsid", "signature", "signed_at"]
+
+required: ["schema_version", "treaty", "parties", "allowed_interactions", "forbidden", "termination"]
+
+# ============================================================================
+# CRITICAL RULES
+# ============================================================================
+rules:
+  no_transitive_trust:
+    description: "If A trusts B and B trusts C, it does NOT imply A trusts C"
+    enforcement: "hard"
+    
+  pairwise_only:
+    description: "Each treaty is between exactly two parties"
+    enforcement: "hard"
+    
+  immutable_after_signing:
+    description: "Treaty content cannot be modified after both parties sign"
+    enforcement: "hard"
+    
+  hash_sphere_anchored:
+    description: "All active treaties must be anchored in Hash Sphere"
+    enforcement: "hard"
