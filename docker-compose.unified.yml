@@ -846,7 +846,7 @@ services:
       dockerfile: Dockerfile
     container_name: lighthouse_service
     ports:
-      - "8700:8000"
+      - "127.0.0.1:8700:8000"
     env_file:
       - ./.env.production
     environment:
@@ -866,7 +866,7 @@ services:
       dockerfile: Dockerfile
     container_name: external_blockchain_service
     ports:
-      - "8702:8000"
+      - "127.0.0.1:8702:8000"
     env_file:
       - ./.env.production
     environment:
@@ -886,7 +886,7 @@ services:
       dockerfile: Dockerfile
     container_name: mining_service
     ports:
-      - "8701:8000"
+      - "127.0.0.1:8701:8000"
     env_file:
       - ./.env.production
     environment:
