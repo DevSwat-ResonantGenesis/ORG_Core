@@ -845,6 +845,8 @@ services:
       context: /home/deploy/RG_lighthouse
       dockerfile: Dockerfile
     container_name: lighthouse_service
+    ports:
+      - "8700:8000"
     env_file:
       - ./.env.production
     environment:
@@ -863,6 +865,8 @@ services:
       context: /home/deploy/RG_external_blockchain
       dockerfile: Dockerfile
     container_name: external_blockchain_service
+    ports:
+      - "8702:8000"
     env_file:
       - ./.env.production
     environment:
@@ -881,6 +885,8 @@ services:
       context: /home/deploy/RG_Mining
       dockerfile: Dockerfile
     container_name: mining_service
+    ports:
+      - "8701:8000"
     env_file:
       - ./.env.production
     environment:
