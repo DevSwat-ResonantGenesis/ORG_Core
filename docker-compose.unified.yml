@@ -796,7 +796,6 @@ services:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
       PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-resonantgenesis.xyz}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-}
       OPENCLAW_SERVICE_ENABLED: ${OPENCLAW_SERVICE_ENABLED:-true}
     depends_on:
       - agent_engine_service
@@ -833,6 +832,74 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ============================================
+  # DECENTRALIZED TRAINING MESH
+  # ============================================
+
+  lighthouse_service:
+    build:
+      context: /home/deploy/RG_lighthouse
+      dockerfile: Dockerfile
+    container_name: lighthouse_service
+    env_file:
+      - ./.env.production
+    environment:
+      RG_ENV: production
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/lighthouse/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  external_blockchain_service:
+    build:
+      context: /home/deploy/RG_external_blockchain
+      dockerfile: Dockerfile
+    container_name: external_blockchain_service
+    env_file:
+      - ./.env.production
+    environment:
+      RG_ENV: production
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  mining_service:
+    build:
+      context: /home/deploy/RG_Mining
+      dockerfile: Dockerfile
+    container_name: mining_service
+    env_file:
+      - ./.env.production
+    environment:
+      RG_ENV: production
+      LIGHTHOUSE_URL: http://lighthouse_service:8000
+      CRYPTO_SERVICE_URL: http://crypto_service:8000
+      EXTERNAL_BLOCKCHAIN_URL: http://external_blockchain_service:8000
+    depends_on:
+      lighthouse_service:
+        condition: service_healthy
+      crypto_service:
+        condition: service_started
+      external_blockchain_service:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/mining/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
