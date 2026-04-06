@@ -70,7 +70,7 @@ services:
       GATEWAY_BUILD_URL: http://build_service:8003
       GATEWAY_CODE_EXECUTION_URL: http://code_execution_service:8002
       GATEWAY_AGENT_ENGINE_URL: http://agent_engine_service:8000
-      GATEWAY_RABBIT_URL: http://rabbit_api_service:8000
+      # GATEWAY_RABBIT_URL: http://rabbit_api_service:8000  # DISABLED
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
       AGENTIC_CHAT_SERVICE_URL: http://rg_agentic_chat:8000
       GUEST_CHAT_SERVICE_URL: http://rg_public_guest_chat:8010
@@ -88,114 +88,8 @@ services:
 
   # ============================================
   # RABBIT SERVICES (Private Reddit-like Platform)
+  # DISABLED — re-enable when needed to free server resources
   # ============================================
-
-  rabbit_api_service:
-    build:
-      context: /home/deploy/RG_Rabbit/rabbit_api_service
-      dockerfile: Dockerfile
-    container_name: rabbit_api_service
-    env_file:
-      - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-      RABBIT_DATABASE_URL: ${RABBIT_DATABASE_URL:-${DATABASE_URL}}
-      RABBIT_DB_POOL_CLASS: "null"
-      RABBIT_CONTENT_URL: http://rabbit_content_service:8000
-      RABBIT_COMMUNITY_URL: http://rabbit_community_service:8000
-      RABBIT_VOTE_URL: http://rabbit_vote_service:8000
-      RABBIT_MODERATION_URL: http://rabbit_moderation_service:8000
-    depends_on:
-      - shared_redis
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  rabbit_content_service:
-    build:
-      context: /home/deploy/RG_Rabbit/rabbit_content_service
-      dockerfile: Dockerfile
-    container_name: rabbit_content_service
-    env_file:
-      - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-    depends_on:
-      - shared_redis
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  rabbit_community_service:
-    build:
-      context: /home/deploy/RG_Rabbit/rabbit_community_service
-      dockerfile: Dockerfile
-    container_name: rabbit_community_service
-    env_file:
-      - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-    depends_on:
-      - shared_redis
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  rabbit_vote_service:
-    build:
-      context: /home/deploy/RG_Rabbit/rabbit_vote_service
-      dockerfile: Dockerfile
-    container_name: rabbit_vote_service
-    env_file:
-      - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-    depends_on:
-      - shared_redis
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
-  rabbit_moderation_service:
-    build:
-      context: /home/deploy/RG_Rabbit/rabbit_moderation_service
-      dockerfile: Dockerfile
-    container_name: rabbit_moderation_service
-    env_file:
-      - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-    depends_on:
-      - shared_redis
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 15s
 
   # ============================================
   # CORE SERVICES
