@@ -471,6 +471,8 @@ services:
       - ./.env.production
     environment:
       PYTHONPATH: /app
+    volumes:
+      - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
     networks:
       - app-network
     restart: unless-stopped
