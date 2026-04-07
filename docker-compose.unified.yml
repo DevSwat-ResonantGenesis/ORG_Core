@@ -66,7 +66,7 @@ services:
       GATEWAY_BLOCKCHAIN_URL: http://blockchain_service:8000
       GATEWAY_NOTIFICATION_URL: http://notification_service:8000
       GATEWAY_CRYPTO_URL: http://crypto_service:8000
-      GATEWAY_IDE_URL: http://ide_platform_service:8080
+      GATEWAY_IDE_URL: http://ide_service:8000
       GATEWAY_BUILD_URL: http://build_service:8003
       GATEWAY_CODE_EXECUTION_URL: http://code_execution_service:8002
       GATEWAY_AGENT_ENGINE_URL: http://agent_engine_service:8000
@@ -462,20 +462,20 @@ services:
       timeout: 10s
       retries: 3
 
-  ide_platform_service:
+  ide_service:
     build:
-      context: /home/deploy/RG_IDE_Platform
+      context: /home/deploy/RG_Axtention_IDE
       dockerfile: Dockerfile
-    container_name: ide_platform_service
+    container_name: ide_service
     env_file:
       - ./.env.production
     environment:
-      REDIS_URL: redis://shared_redis:6379/0
+      PYTHONPATH: /app
     networks:
       - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=5)"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3
