@@ -523,6 +523,27 @@ services:
   # AGENT & AI SERVICES
   # ============================================
 
+  agent_architect:
+    build:
+      context: /home/deploy/RG_agent_architect
+      dockerfile: Dockerfile
+    container_name: agent_architect
+    env_file:
+      - ./.env.production
+    environment:
+      AGENT_ENGINE_URL: http://agent_engine_service:8000
+      MEMORY_SERVICE_URL: http://memory_service:8000
+      LLM_SERVICE_URL: http://llm_service:8000
+      PYTHONPATH: /app
+    networks:
+      - app-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   agent_engine_service:
     build:
       context: /home/deploy/RG_Agent_Engine
