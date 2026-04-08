@@ -36,10 +36,13 @@ class SubscriptionTier(str, PyEnum):
     ENTERPRISE = "enterprise"  # Custom pricing
     
     # API Subscriptions
-    STATE_PHYSICS_DEV = "state_physics_dev"      # State Physics API - Dev tier
-    STATE_PHYSICS_STARTUP = "state_physics_startup"  # State Physics API - Startup tier
-    HASH_SPHERE_DEV = "hash_sphere_memory_dev"   # Hash Sphere Memory API - Dev tier
-    HASH_SPHERE_STARTUP = "hash_sphere_memory_startup"  # Hash Sphere Memory API - Startup tier
+    STATE_PHYSICS_DEV = "state_physics_dev"      # State Physics API - Dev tier ($49/mo)
+    STATE_PHYSICS_STARTUP = "state_physics_startup"  # State Physics API - Startup tier ($299/mo)
+    HASH_SPHERE_DEV = "hash_sphere_memory_dev"   # Hash Sphere Memory API - Dev tier ($49/mo)
+    HASH_SPHERE_STARTUP = "hash_sphere_memory_startup"  # Hash Sphere Memory API - Startup tier ($299/mo)
+    HASH_SPHERE_SCALE = "hash_sphere_memory_scale"  # Hash Sphere Memory API - Scale tier ($1200/mo)
+    CODE_VIS_DEV = "code_visualizer_dev"         # Code Visualizer API - Dev tier ($49/mo)
+    CODE_VIS_STARTUP = "code_visualizer_startup"  # Code Visualizer API - Startup tier ($299/mo)
 
 
 class SubscriptionStatus(str, PyEnum):

@@ -50,6 +50,19 @@ STRIPE_PRICE_TO_TIER: Dict[str, SubscriptionTier] = {
     "price_1ShbBTCOOYDd7mWiAjyrmyU9": SubscriptionTier.PLUS,  # Yearly
     
     # Enterprise - custom pricing (handled via sales)
+    
+    # State Physics API
+    "price_1SkMmuCOOYDd7mWiKaMek8O8": SubscriptionTier.STATE_PHYSICS_DEV,
+    "price_1SkMmvCOOYDd7mWi4YoPPrLU": SubscriptionTier.STATE_PHYSICS_STARTUP,
+    
+    # Hash Sphere Memory API
+    "price_1SkMmvCOOYDd7mWigOBSBMIp": SubscriptionTier.HASH_SPHERE_DEV,
+    "price_1SkMmwCOOYDd7mWihS62QOPV": SubscriptionTier.HASH_SPHERE_STARTUP,
+    "price_1TJozKCOOYDd7mWipmRG2Mnl": SubscriptionTier.HASH_SPHERE_SCALE,
+    
+    # Code Visualizer API
+    "price_1TJozXCOOYDd7mWi0sSh4g80": SubscriptionTier.CODE_VIS_DEV,
+    "price_1TJozhCOOYDd7mWi33F9jd63": SubscriptionTier.CODE_VIS_STARTUP,
 }
 
 # Reverse mapping for creating Stripe subscriptions
@@ -81,6 +94,18 @@ TIER_TO_STRIPE_PRICE: Dict[SubscriptionTier, Dict[str, str]] = {
     },
     SubscriptionTier.HASH_SPHERE_STARTUP: {
         "monthly": os.getenv("STRIPE_PRICE_HASH_SPHERE_STARTUP"),
+        "yearly": None,
+    },
+    SubscriptionTier.HASH_SPHERE_SCALE: {
+        "monthly": os.getenv("STRIPE_PRICE_HASH_SPHERE_SCALE"),
+        "yearly": None,
+    },
+    SubscriptionTier.CODE_VIS_DEV: {
+        "monthly": os.getenv("STRIPE_PRICE_CODE_VIS_DEV"),
+        "yearly": None,
+    },
+    SubscriptionTier.CODE_VIS_STARTUP: {
+        "monthly": os.getenv("STRIPE_PRICE_CODE_VIS_STARTUP"),
         "yearly": None,
     },
 }

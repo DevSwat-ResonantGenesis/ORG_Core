@@ -1695,6 +1695,9 @@ async def create_checkout_session(
             "state_physics_startup": SubscriptionTier.STATE_PHYSICS_STARTUP,
             "hash_sphere_memory_dev": SubscriptionTier.HASH_SPHERE_DEV,
             "hash_sphere_memory_startup": SubscriptionTier.HASH_SPHERE_STARTUP,
+            "hash_sphere_memory_scale": SubscriptionTier.HASH_SPHERE_SCALE,
+            "code_visualizer_dev": SubscriptionTier.CODE_VIS_DEV,
+            "code_visualizer_startup": SubscriptionTier.CODE_VIS_STARTUP,
         }
         
         tier = tier_map.get(request.plan_id.lower(), SubscriptionTier.DEVELOPER)
