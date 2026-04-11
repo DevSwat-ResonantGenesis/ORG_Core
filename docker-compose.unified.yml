@@ -147,12 +147,21 @@ services:
       LLM_SERVICE_URL: http://llm_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
+      AGENT_ENGINE_URL: http://agent_engine_service:8000
+      AGENT_ARCHITECT_URL: http://agent_architect:8000
+      BILLING_SERVICE_URL: http://billing_service:8000
+      BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
-      DEPLOYMENT_COLOR: green
+      CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
+      NOTIFICATION_SERVICE_URL: http://notification_service:8000
       PYTHONPATH: /app
     volumes:
       - /home/deploy/RG_Platform_Tools:/app/platform_tools:ro
-      - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+    depends_on:
+      - shared_redis
+      - llm_service
+      - memory_service
+      - auth_service
     networks:
       - app-network
     restart: unless-stopped
@@ -471,8 +480,11 @@ services:
       - ./.env.production
     environment:
       PYTHONPATH: /app
+      LLM_SERVICE_URL: http://llm_service:8000
     volumes:
       - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+    depends_on:
+      - llm_service
     networks:
       - app-network
     restart: unless-stopped
@@ -536,7 +548,14 @@ services:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
       LLM_SERVICE_URL: http://llm_service:8000
+      BILLING_SERVICE_URL: http://billing_service:8000
+      BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
+      AUTH_SERVICE_URL: http://auth_service:8000
       PYTHONPATH: /app
+    depends_on:
+      - llm_service
+      - agent_engine_service
+      - memory_service
     networks:
       - app-network
     restart: unless-stopped
@@ -559,17 +578,26 @@ services:
       AGENT_ENGINE_DB_POOL_CLASS: "null"
       LLM_SERVICE_URL: http://llm_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
+      AUTH_SERVICE_URL: http://auth_service:8000
+      BILLING_SERVICE_URL: http://billing_service:8000
       RARA_SERVICE_URL: http://rg_internal_invarients_sim:8093
       BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
       MARKETPLACE_SERVICE_URL: http://marketplace_service:8000
+      NOTIFICATION_SERVICE_URL: http://notification_service:8000
+      CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
       SANDBOX_RUNNER_URL: http://sandbox_runner_service:9001
       AGENT_ENGINE_DOCKER_PER_RUN_SANDBOX_ENABLED: "true"
+      AGENT_ENGINE_ENABLE_SCHEDULER: "true"
+      AGENT_ENGINE_ENABLE_AUTONOMOUS_DAEMON: "true"
       DISCORD_BOT_CLIENT_ID: ${DISCORD_BOT_CLIENT_ID:-}
       PYTHONPATH: /app
     volumes:
       - build_projects:/opt/resonant/user_workspaces
       - /home/deploy/RG_Platform_Tools:/app/platform_tools:ro
-      - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+    depends_on:
+      - shared_redis
+      - llm_service
+      - auth_service
     networks:
       - app-network
     restart: unless-stopped
@@ -635,8 +663,11 @@ services:
       RATE_LIMIT_PER_MINUTE: "20"
       DEFAULT_MODEL: "llama-3.3-70b-versatile"
       PORT: "8010"
+      LLM_SERVICE_URL: http://llm_service:8000
     volumes:
       - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+    depends_on:
+      - llm_service
     networks:
       - app-network
     restart: unless-stopped
