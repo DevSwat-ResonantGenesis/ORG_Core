@@ -32,6 +32,7 @@ MEMORY_SERVICE_URL = os.getenv("MEMORY_SERVICE_URL", "http://memory_service:8000
 AGENT_ENGINE_URL = os.getenv("AGENT_ENGINE_URL", "http://agent_engine_service:8000")
 STATE_PHYSICS_URL = os.getenv("STATE_PHYSICS_URL", "http://rg_users_invarients_sim:8091")
 IDE_SERVICE_URL = os.getenv("IDE_SERVICE_URL", "http://ide_platform_service:8080")
+AGENT_ARCHITECT_URL = os.getenv("AGENT_ARCHITECT_URL", "http://agent_architect:8000")
 
 
 class SkillExecutor:
@@ -45,6 +46,7 @@ class SkillExecutor:
             "memory_search": self._execute_memory_search,
             "memory_library": self._execute_memory_library,
             "agents_os": self._execute_agents_os,
+            "agent_architect": self._execute_agent_architect,
             "state_physics": self._execute_state_physics,
             "ide_workspace": self._execute_ide_workspace,
             "rabbit_post": self._execute_rabbit_post,
@@ -2399,6 +2401,173 @@ class SkillExecutor:
         skill_module = INTEGRATION_SKILLS[skill_id]
         logger.info(f"🔌 Executing modular integration skill: {skill_id} ({skill_module.skill_name})")
         return await skill_module.execute(message, user_id, context)
+
+    # ============================================
+    # AGENT ARCHITECT SKILL (ReAct orchestrator)
+    # ============================================
+
+    async def _execute_agent_architect(
+        self, message: str, user_id: str, context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Delegate to the standalone Agent Architect service.
+
+        The architect runs a ReAct loop with 26 tools (build_agent, run_agent,
+        modify_agent, set_trigger, check_integrations, memory, blockchain, etc.).
+        We try SSE streaming first, then fall back to sync.
+        """
+        panel_url = "/agents?embed=1"
+        headers = {
+            "x-user-id": user_id,
+            "x-user-role": str(context.get("user_role", "user")),
+            "x-is-superuser": "true" if bool(context.get("is_superuser", False)) else "false",
+            "x-unlimited-credits": "true" if bool(context.get("unlimited_credits", False)) else "false",
+        }
+        svc_payload = {
+            "message": message,
+            "workspace_id": user_id,
+            "user_id": user_id,
+            "context": context.get("prev_assistant_content", ""),
+        }
+
+        # Try SSE streaming first for real-time progress
+        try:
+            result = await self._architect_delegate_to_services(svc_payload, headers, panel_url)
+            return result
+        except Exception as e:
+            logger.error(f"Agent architect delegation failed: {e}")
+            return {
+                "success": False,
+                "action": "open_agents_panel",
+                "panel_url": panel_url,
+                "error": f"Agent Architect unavailable: {e}",
+                "summary": (
+                    "**Agent Architect** is currently unavailable. "
+                    "You can still manage agents directly from the **Agents** panel.\n\n"
+                    f"- Open panel: {panel_url}"
+                ),
+            }
+
+    async def _architect_delegate_to_services(
+        self, svc_payload: Dict, headers: Dict[str, str], panel_url: str
+    ) -> Dict[str, Any]:
+        """Call the architect service via SSE streaming with sync fallback."""
+        result: Dict[str, Any] = {
+            "success": True,
+            "action": "open_agents_panel",
+            "panel_url": panel_url,
+            "summary": "",
+        }
+
+        accumulated_text = ""
+        actions_taken = []
+
+        # Try SSE streaming
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{AGENT_ARCHITECT_URL}/api/message/stream",
+                    json=svc_payload,
+                    headers=headers,
+                ) as resp:
+                    if resp.status_code != 200:
+                        raise httpx.HTTPStatusError(
+                            f"Architect returned {resp.status_code}",
+                            request=resp.request,
+                            response=resp,
+                        )
+
+                    async for line in resp.aiter_lines():
+                        line = line.strip()
+                        if not line or not line.startswith("data: "):
+                            continue
+                        data_str = line[6:]
+                        if data_str == "[DONE]":
+                            break
+
+                        try:
+                            import json
+                            event = json.loads(data_str)
+                        except Exception:
+                            continue
+
+                        etype = event.get("type", "")
+                        if etype == "text":
+                            accumulated_text += event.get("data", {}).get("content", "")
+                        elif etype == "tool_call":
+                            actions_taken.append(event.get("data", {}))
+                        elif etype == "tool_result":
+                            pass  # tracked via actions
+                        elif etype == "complete":
+                            resp_data = event.get("data", {}).get("response", {})
+                            accumulated_text = resp_data.get("text", accumulated_text)
+                            options_data = resp_data.get("options")
+                            if options_data:
+                                result["present_options"] = self._map_architect_options(options_data)
+                        elif etype == "error":
+                            err = event.get("data", {}).get("error", "Unknown error")
+                            result["error"] = err
+
+            if accumulated_text:
+                result["summary"] = accumulated_text
+            if actions_taken:
+                result["actions"] = actions_taken
+            return result
+
+        except Exception as stream_err:
+            logger.warning(f"Architect SSE stream failed, trying sync: {stream_err}")
+
+        # Fallback: synchronous call
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.post(
+                    f"{AGENT_ARCHITECT_URL}/api/message",
+                    json=svc_payload,
+                    headers=headers,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    result["summary"] = data.get("text", data.get("response", ""))
+                    options_data = data.get("options")
+                    if options_data:
+                        result["present_options"] = self._map_architect_options(options_data)
+                    return result
+                else:
+                    result["success"] = False
+                    result["error"] = f"Architect returned {resp.status_code}"
+                    result["summary"] = "Agent Architect is temporarily unavailable."
+                    return result
+        except Exception as sync_err:
+            raise Exception(f"Both SSE and sync calls failed: {stream_err}; {sync_err}")
+
+    def _map_architect_options(self, options_data: Any) -> Dict[str, Any]:
+        """Map architect present_options to the chat UI format."""
+        if not isinstance(options_data, dict):
+            return {}
+        raw_options = options_data.get("options", [])
+        mapped = []
+        if isinstance(raw_options, list):
+            for opt in raw_options[:4]:
+                if isinstance(opt, str):
+                    mapped.append({
+                        "label": opt,
+                        "value": f"Agent Architect: {opt}",
+                        "description": opt,
+                        "icon": "🔧",
+                    })
+                elif isinstance(opt, dict):
+                    mapped.append({
+                        "label": opt.get("label", opt.get("text", str(opt))),
+                        "value": f"Agent Architect: {opt.get('value', opt.get('label', ''))}",
+                        "description": opt.get("description", ""),
+                        "icon": opt.get("icon", "🔧"),
+                    })
+        return {
+            "_type": "present_options",
+            "title": options_data.get("question", "What's next?"),
+            "options": mapped,
+            "allow_custom": True,
+        }
 
     def _parse_rabbit_post_message(self, message: str) -> tuple:
         """Parse title, body, and community_slug from a chat message."""

@@ -88,6 +88,21 @@ app.include_router(approval_router)
 app.include_router(dsidp_router)
 app.include_router(goals_router, prefix="/agents")
 
+# Startup hook: mark orphaned "running" sessions as failed (they died with the previous process)
+@app.on_event("startup")
+async def cleanup_orphaned_sessions():
+    try:
+        async with engine.begin() as conn:
+            result = await conn.execute(
+                text("UPDATE agent_sessions SET status = 'failed' WHERE status = 'running'")
+            )
+            count = result.rowcount
+            if count:
+                logger.warning(f"[STARTUP] Marked {count} orphaned 'running' sessions as 'failed'")
+    except Exception as e:
+        logger.warning(f"[STARTUP] Orphan cleanup skipped: {e}")
+
+
 # Startup hook to ensure safety_rules.parameters column exists
 @app.on_event("startup")
 async def ensure_schema():
@@ -294,32 +309,8 @@ async def ensure_schema():
         # tools (HTTP/webhook) via /tools/custom endpoints.
 
 
-@app.on_event("startup")
-async def maybe_start_full_autonomy():
-    if os.getenv("AGENT_ENGINE_ENABLE_AUTO_STARTUP", "false").lower() != "true":
-        return
-
-    try:
-        from .auto_startup import auto_startup
-
-        asyncio.create_task(auto_startup())
-        logger.info("Auto-startup enabled: starting full autonomy system")
-    except Exception as e:
-        logger.error(f"Failed to start auto-startup: {e}")
-
-
-@app.on_event("shutdown")
-async def maybe_stop_full_autonomy():
-    if os.getenv("AGENT_ENGINE_ENABLE_AUTO_STARTUP", "false").lower() != "true":
-        return
-
-    try:
-        from .auto_startup import auto_shutdown
-
-        await auto_shutdown()
-        logger.info("Auto-startup enabled: full autonomy system shutdown complete")
-    except Exception as e:
-        logger.error(f"Failed to shutdown auto-startup: {e}")
+    # auto_startup / full_autonomy removed — was fake placeholder code.
+    # Real agent scheduling is handled by scheduler_daemon.
 
 
 @app.on_event("startup")

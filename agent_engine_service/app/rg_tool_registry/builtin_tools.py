@@ -3,6 +3,7 @@ Built-in Tool Definitions — ALL platform tools in unified ToolDef format.
 Server-side tools (search, memory, agents, media, integrations, etc.)
 IDE-only tools are in builtin_tools_ide.py
 """
+from typing import Dict
 from .registry import ToolDef, ToolParam, ToolCategory, ToolAccess, ParamType
 
 _R = ToolAccess.REGISTERED
@@ -340,6 +341,56 @@ AGENT_TOOLS_EXTENDED = [
             params=[], handler="_custom_session_log", access={_R}, priority=20),
 ]
 
+# ── AGENT ARCHITECT (meta-agent that creates & configures other agents) ──
+AGENT_ARCHITECT_TOOLS = [
+    ToolDef(name="architect_plan", description="Analyze a user request and produce a JSON blueprint for one or more production-ready agents with optimal tools, models, schedules, goals, and webhooks.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("request", ParamType.STRING, "natural language description of what agents to build", required=True)],
+            handler="_custom_architect_plan", access={_R, _A}, priority=5),
+    ToolDef(name="architect_create_agent", description="Create a fully-configured agent from a blueprint — sets tools, model, provider, system prompt, safety config.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("name", ParamType.STRING, "agent name", required=True),
+                    ToolParam("description", ParamType.STRING, "agent purpose", required=True),
+                    ToolParam("provider", ParamType.STRING, "LLM provider", default="groq"),
+                    ToolParam("model", ParamType.STRING, "model name", default="llama-3.3-70b-versatile"),
+                    ToolParam("tools", ParamType.ARRAY, "tool names to assign", items_type="string"),
+                    ToolParam("mode", ParamType.STRING, "governed or unbounded", default="governed"),
+                    ToolParam("system_prompt", ParamType.STRING, "custom system prompt"),
+                    ToolParam("temperature", ParamType.NUMBER, default=0.6)],
+            handler="_custom_architect_create_agent", access={_R, _A}, priority=5),
+    ToolDef(name="architect_assign_goal", description="Assign a goal to an agent created by Agent Architect.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("agent_id", ParamType.STRING, required=True),
+                    ToolParam("goal", ParamType.STRING, "goal description", required=True),
+                    ToolParam("priority", ParamType.INTEGER, "1-10", default=5)],
+            handler="_custom_architect_assign_goal", access={_R, _A}, priority=5),
+    ToolDef(name="architect_create_schedule", description="Create a recurring schedule for an agent — cron or interval.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("agent_id", ParamType.STRING, required=True),
+                    ToolParam("name", ParamType.STRING, "schedule name", required=True),
+                    ToolParam("goal", ParamType.STRING, "what to do each run", required=True),
+                    ToolParam("cron_expression", ParamType.STRING, "cron e.g. '0 */6 * * *'"),
+                    ToolParam("interval_seconds", ParamType.INTEGER, "seconds between runs")],
+            handler="_custom_architect_create_schedule", access={_R, _A}, priority=10),
+    ToolDef(name="architect_create_webhook", description="Create a webhook trigger for an agent so it can be invoked externally.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("agent_id", ParamType.STRING, required=True),
+                    ToolParam("name", ParamType.STRING, "webhook name", required=True)],
+            handler="_custom_architect_create_webhook", access={_R, _A}, priority=10),
+    ToolDef(name="architect_set_autonomy", description="Set an agent's autonomy mode (governed, supervised, unbounded).",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("agent_id", ParamType.STRING, required=True),
+                    ToolParam("mode", ParamType.STRING, "autonomy mode", required=True, enum=["governed","supervised","unbounded"]),
+                    ToolParam("reason", ParamType.STRING, "why changing mode")],
+            handler="_custom_architect_set_autonomy", access={_R, _A}, priority=10),
+    ToolDef(name="architect_list_available_tools", description="List all tools available to assign to agents.",
+            category=ToolCategory.AGENTS,
+            params=[], handler="_custom_architect_list_tools", access={_R, _A}, priority=15),
+    ToolDef(name="architect_list_providers", description="List available LLM providers and models for agent creation.",
+            category=ToolCategory.AGENTS,
+            params=[], handler="_custom_architect_list_providers", access={_R, _A}, priority=15),
+]
+
 # ── DEVELOPER ──
 DEVELOPER_TOOLS = [
     ToolDef(name="execute_code", description="Run code in Docker sandbox (python/js/bash).", category=ToolCategory.DEVELOPER,
@@ -388,16 +439,27 @@ GITHUB_TOOLS = [
 
 # ── TOOL MANAGEMENT ──
 TOOL_MANAGEMENT_TOOLS = [
-    ToolDef(name="create_tool", description="Create custom HTTP tool stored in DB.", category=ToolCategory.SYSTEM,
-            params=[ToolParam("tool_name", ParamType.STRING, required=True), ToolParam("description", ParamType.STRING, required=True), ToolParam("endpoint_url", ParamType.STRING, required=True)],
-            handler="_custom_create_tool", access={_R}, priority=40),
-    ToolDef(name="list_tools", description="List user's custom tools.", category=ToolCategory.SYSTEM,
-            params=[], handler="_custom_list_tools", access={_R}, priority=40),
+    ToolDef(name="create_tool", description="Create custom HTTP tool stored in DB. Tool becomes available platform-wide when is_shared=true.", category=ToolCategory.SYSTEM,
+            params=[ToolParam("tool_name", ParamType.STRING, required=True), ToolParam("description", ParamType.STRING, required=True), ToolParam("endpoint_url", ParamType.STRING, required=True),
+                    ToolParam("category", ParamType.STRING, "tool category (auto-created if new)", default="custom"),
+                    ToolParam("http_method", ParamType.STRING, default="GET"), ToolParam("parameters", ParamType.OBJECT, "JSON param schema"),
+                    ToolParam("request_body", ParamType.OBJECT, "JSON body template"), ToolParam("is_shared", ParamType.BOOLEAN, "make available platform-wide", default=False)],
+            handler="_custom_create_tool", access={_R, _G, _A}, priority=40),
+    ToolDef(name="list_tools", description="List user's custom tools and all shared platform tools.", category=ToolCategory.SYSTEM,
+            params=[], handler="_custom_list_tools", access={_R, _G, _A}, priority=40),
     ToolDef(name="delete_tool", description="Delete a custom tool.", category=ToolCategory.SYSTEM,
-            params=[ToolParam("tool_name", ParamType.STRING, required=True)], handler="_custom_delete_tool", access={_R}, priority=40),
+            params=[ToolParam("tool_name", ParamType.STRING, required=True)], handler="_custom_delete_tool", access={_R, _G, _A}, priority=40),
     ToolDef(name="update_tool", description="Update an existing custom tool.", category=ToolCategory.SYSTEM,
             params=[ToolParam("tool_name", ParamType.STRING, required=True), ToolParam("description", ParamType.STRING), ToolParam("endpoint_url", ParamType.STRING), ToolParam("http_method", ParamType.STRING)],
-            handler="_custom_update_tool", access={_R}, priority=40),
+            handler="_custom_update_tool", access={_R, _G, _A}, priority=40),
+    ToolDef(name="auto_build_tool", description="LLM designs, validates (AST safety scan), and registers a new tool at runtime. Describe what the tool should do and it will be created automatically.", category=ToolCategory.SYSTEM,
+            params=[ToolParam("capability", ParamType.STRING, "what the tool should do", required=True),
+                    ToolParam("category", ParamType.STRING, "tool category", default="custom"),
+                    ToolParam("is_shared", ParamType.BOOLEAN, "make available platform-wide", default=True)],
+            handler="_custom_auto_build_tool", access={_R, _G, _A}, priority=35),
+    ToolDef(name="check_tool_exists", description="Check if a capability exists as a tool. Returns the tool if found, or suggests building one if not.", category=ToolCategory.SYSTEM,
+            params=[ToolParam("capability", ParamType.STRING, "what you need the tool to do", required=True)],
+            handler="_custom_check_tool_exists", access={_R, _G, _A}, priority=35),
 ]
 
 # ── GIT OPERATIONS ──
@@ -461,6 +523,129 @@ IDE_FILESYSTEM_TOOLS = [
 ]
 
 
+# ── CHAT SKILLS (high-level orchestrator skills for Resonant Chat & AI assistant) ──
+# These are top-level skill entry points that the LLM routes user messages to.
+# Each wraps multiple granular tools into a single user-facing capability.
+CHAT_SKILL_TOOLS = [
+    # --- Analysis ---
+    ToolDef(name="skill_code_visualizer",
+            description="Scan and analyze a GitHub repository or codebase. ONLY when user provides a GitHub URL or explicitly asks to scan/analyze a repo/codebase.",
+            category=ToolCategory.CODE_ANALYSIS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_code_visualizer", access={_R}, priority=5,
+            requires_api_key=None),
+    ToolDef(name="skill_state_physics",
+            description="Open State Physics visualization panel. ONLY when user explicitly says 'open state physics', 'show state physics', or 'state-space visualization'.",
+            category=ToolCategory.STATE_PHYSICS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_state_physics", access={_R}, priority=10),
+    ToolDef(name="skill_sigma",
+            description="Access Sigma Computing dashboards. When user asks about their Sigma reports or analytics.",
+            category=ToolCategory.INTEGRATIONS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_integration", access={_R}, priority=15, requires_api_key="sigma"),
+
+    # --- Search ---
+    ToolDef(name="skill_web_search",
+            description="Search the web for real-time information. ONLY for current events, live prices, weather, recent news, or facts that require up-to-date data the AI cannot know.",
+            category=ToolCategory.SEARCH,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_web_search", access={_R, _G}, priority=5,
+            requires_api_key="tavily"),
+
+    # --- Generation ---
+    ToolDef(name="skill_image_generation",
+            description="Generate an image with DALL-E. ONLY when user explicitly asks to generate/create/draw/make an image, picture, or illustration.",
+            category=ToolCategory.MEDIA,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_image_generation", access={_R}, priority=10,
+            requires_api_key="openai"),
+
+    # --- Memory ---
+    ToolDef(name="skill_memory_search",
+            description="Search user's long-term memory for previously stored information. When user asks 'what did I say about X' or 'do you remember X'.",
+            category=ToolCategory.MEMORY,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_memory_search", access={_R}, priority=5),
+    ToolDef(name="skill_memory_library",
+            description="Open the memory library panel. ONLY when user explicitly says 'open memory library', 'show my memories', or 'browse memories'.",
+            category=ToolCategory.MEMORY,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_memory_library", access={_R}, priority=10),
+
+    # --- Agents ---
+    ToolDef(name="skill_agents_os",
+            description="Create, manage, rename, delete, or configure AI agents. ONLY when user explicitly asks to create/build/manage/rename/delete agents or open Agents OS.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_agents_os", access={_R}, priority=5),
+    ToolDef(name="skill_agent_architect",
+            description="Design and build advanced autonomous agents from a high-level description. When user wants a powerful/professional/advanced/autonomous agent built with optimal setup — tools, schedules, budgets, webhooks, goals, API connections. Use this instead of agents_os when user describes WHAT they need (not just 'create agent') and wants smart auto-configuration.",
+            category=ToolCategory.AGENTS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_agent_architect", access={_R}, priority=3),
+
+    # --- Utility ---
+    ToolDef(name="skill_ide_workspace",
+            description="Open the IDE workspace split panel. ONLY when user explicitly says 'open IDE', 'open editor', 'open terminal', or 'open workspace'. Do NOT trigger for coding questions.",
+            category=ToolCategory.DEVELOPER,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_ide_workspace", access={_R}, priority=10),
+    ToolDef(name="skill_rabbit_post",
+            description="Create a post on Rabbit community forum. When user wants to post something to a Rabbit community.",
+            category=ToolCategory.COMMUNITY,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_rabbit_post", access={_R}, priority=10),
+
+    # --- Integrations ---
+    ToolDef(name="skill_google_drive",
+            description="Access Google Drive files. When user asks about their Drive files, documents, or wants to search/read/create files.",
+            category=ToolCategory.INTEGRATIONS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_integration", access={_R}, priority=15, requires_api_key="google-drive"),
+    ToolDef(name="skill_google_calendar",
+            description="Access Google Calendar. When user asks about their schedule, events, meetings, or wants to create/view calendar events.",
+            category=ToolCategory.INTEGRATIONS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_integration", access={_R}, priority=15, requires_api_key="google-calendar"),
+    ToolDef(name="skill_figma",
+            description="Access Figma designs. When user asks about their Figma projects, design files, or components.",
+            category=ToolCategory.INTEGRATIONS,
+            params=[ToolParam("message", ParamType.STRING, "user message", required=True)],
+            handler="_execute_integration", access={_R}, priority=15, requires_api_key="figma"),
+]
+
+# Mapping: skill_id (used by Resonant Chat) -> unified tool name
+SKILL_ID_TO_TOOL_NAME = {
+    "code_visualizer": "skill_code_visualizer",
+    "web_search": "skill_web_search",
+    "image_generation": "skill_image_generation",
+    "memory_search": "skill_memory_search",
+    "memory_library": "skill_memory_library",
+    "agents_os": "skill_agents_os",
+    "agent_architect": "skill_agent_architect",
+    "state_physics": "skill_state_physics",
+    "ide_workspace": "skill_ide_workspace",
+    "rabbit_post": "skill_rabbit_post",
+    "google_drive": "skill_google_drive",
+    "google_calendar": "skill_google_calendar",
+    "figma": "skill_figma",
+    "sigma": "skill_sigma",
+}
+TOOL_NAME_TO_SKILL_ID = {v: k for k, v in SKILL_ID_TO_TOOL_NAME.items()}
+
+
+def get_chat_skill_descriptions() -> Dict[str, str]:
+    """Build _SKILL_TOOL_DESCRIPTIONS dict from unified CHAT_SKILL_TOOLS.
+    Returns {skill_id: description} for LLM detection in Resonant Chat."""
+    descs = {}
+    for tool in CHAT_SKILL_TOOLS:
+        skill_id = TOOL_NAME_TO_SKILL_ID.get(tool.name)
+        if skill_id:
+            descs[skill_id] = tool.description
+    return descs
+
+
 # ═══════════════════════════════════════════════════════════
 # ALL_TOOLS — single flat list of every tool on the platform
 # ═══════════════════════════════════════════════════════════
@@ -472,6 +657,7 @@ ALL_TOOLS = (
     + CODE_VISUALIZER_TOOLS
     + AGENT_TOOLS
     + AGENT_TOOLS_EXTENDED
+    + AGENT_ARCHITECT_TOOLS
     + MEDIA_TOOLS
     + INTEGRATION_TOOLS
     + STATE_PHYSICS_TOOLS
@@ -483,6 +669,7 @@ ALL_TOOLS = (
     + TOOL_MANAGEMENT_TOOLS
     + PLATFORM_API_TOOLS
     + IDE_FILESYSTEM_TOOLS
+    + CHAT_SKILL_TOOLS
 )
 
 

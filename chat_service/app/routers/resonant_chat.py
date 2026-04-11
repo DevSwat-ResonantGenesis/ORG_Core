@@ -371,6 +371,7 @@ def _extract_navigation_tool_results(user_message: str) -> List[ToolResultData]:
 
     # Common internal page navigation
     page_routes: List[tuple[str, str, str]] = [
+        (r"\bagents?\s+(?:os|page|panel)\b", "/agents", "agents"),
         (r"\bagents?\b", "/agents", "agents"),
         (r"\bagent\s+teams?\b", "/agent-teams", "agent-teams"),
         (r"\bteam\s+dashboard\b", "/agent-teams", "agent-teams"),
@@ -379,6 +380,21 @@ def _extract_navigation_tool_results(user_message: str) -> List[ToolResultData]:
         (r"\bpricing\b", "/pricing", "pricing"),
         (r"\baccount\b", "/dashboard", "dashboard"),
         (r"\bide\b", "/ide", "ide"),
+        (r"\bmarketplace\b", "/marketplace", "marketplace"),
+        (r"\bcode\s*visual", "/code-visualizer", "code-visualizer"),
+        (r"\bstate\s*physics\b", "/state-physics", "state-physics"),
+        (r"\bresonant\s+memory\b", "/resonant-memory", "resonant-memory"),
+        (r"\bmemory\s+(?:page|library|panel)\b", "/resonant-memory", "resonant-memory"),
+        (r"\brabbit\b", "/rabbit", "rabbit"),
+        (r"\bcommunity\b", "/rabbit", "rabbit"),
+        (r"\bprofile\b", "/profile", "profile"),
+        (r"\bsettings\b", "/profile", "profile"),
+        (r"\bconnect.?profiles?\b", "/connect-profiles", "connect-profiles"),
+        (r"\bintegrations?\b", "/connect-profiles", "connect-profiles"),
+        (r"\bapi\s*keys?\b", "/connect-profiles", "connect-profiles"),
+        (r"\bbuild\b", "/build", "build"),
+        (r"\bproject\s*builder\b", "/build", "build"),
+        (r"\bwallet\b", "/wallet", "wallet"),
     ]
 
     for pattern, path, page in page_routes:
@@ -407,6 +423,7 @@ _SKILL_TOOL_DESCRIPTIONS = {
     "memory_search": "Search user\'s long-term memory for previously stored information. When user asks \'what did I say about X\' or \'do you remember X\'.",
     "memory_library": "Open the memory library panel. ONLY when user explicitly says \"open memory library\", \"show my memories\", or \"browse memories\".",
     "agents_os": "Create, manage, rename, delete, or configure AI agents. ONLY when user explicitly asks to create/build/manage/rename/delete agents or open Agents OS.",
+    "agent_architect": "Design and build advanced autonomous agents from a high-level description. When user wants to architect, plan, or design a complex agent workflow, or says 'build me an agent that...'. The architect uses a ReAct loop with real tools to create, configure, and test agents.",
     "state_physics": "Open State Physics visualization panel. ONLY when user explicitly says \"open state physics\", \"show state physics\", or \"state-space visualization\".",
     "ide_workspace": "Open the IDE workspace split panel. ONLY when user explicitly says \"open IDE\", \"open editor\", \"open terminal\", or \"open workspace\". Do NOT trigger for coding questions or requests to write code.",
     "rabbit_post": "Create a post on Rabbit community forum. When user wants to post something to a Rabbit community.",

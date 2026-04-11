@@ -20,8 +20,8 @@ class Settings(BaseSettings):
     ED_SERVICE_URL: str = os.getenv("ED_SERVICE_URL", "http://ed_service:8000")
     
     # Safety limits
-    MAX_LOOP_ITERATIONS: int = 25
-    MAX_TOKENS_PER_RUN: int = 100000
+    MAX_LOOP_ITERATIONS: int = 200
+    MAX_TOKENS_PER_RUN: int = 500000
     MAX_TOOL_CALLS_PER_STEP: int = 20
     SAFETY_TIMEOUT_SECONDS: int = 300
     
@@ -36,6 +36,9 @@ class Settings(BaseSettings):
         "SANDBOX_RUNNER_API_KEY",
         "",
     )
+
+    # Internal service authentication
+    INTERNAL_SERVICE_KEY: str = os.getenv("INTERNAL_SERVICE_KEY", "")
 
     AGENT_ENGINE_DOCKER_PER_RUN_SANDBOX_ENABLED: bool = os.getenv(
         "AGENT_ENGINE_DOCKER_PER_RUN_SANDBOX_ENABLED",

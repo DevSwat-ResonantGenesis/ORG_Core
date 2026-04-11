@@ -25,7 +25,6 @@ from .models import (
     AgentDefinition, AgentSession, AgentStep, AgentPlan,
     ToolDefinition, WorkflowTrigger
 )
-from .tool_spec import ToolSpec
 from .safety import safety_envelope, approval_manager
 from .planner import tool_planner, goal_decomposer
 from .verifier import verifier_agent, VerificationResult, VerificationReport
@@ -60,11 +59,62 @@ except ImportError:
 import logging
 logger = logging.getLogger(__name__)
 
-# ── Unified LLM Client (replaces direct provider constants) ──
-from rg_llm import UnifiedLLMClient, LLMRequest
-from rg_llm.providers import BUILTIN_PROVIDERS
+# ── LLM Client via unified HTTP service (no rg_llm dependency) ──
+LLM_SERVICE_URL = os.getenv("LLM_SERVICE_URL", "http://llm_service:8000").rstrip("/")
 
-_llm_client = UnifiedLLMClient(
+
+class _HTTPLLMResponse:
+    """Lightweight response wrapper matching the rg_llm interface."""
+    def __init__(self, content: str, provider: str, model: str, usage: dict, was_fallback: bool = False, fallback_chain: list = None):
+        self.content = content
+        self.provider = provider
+        self.model = model
+        self.usage = usage
+        self.was_fallback = was_fallback
+        self.fallback_chain = fallback_chain or []
+
+
+class _HTTPLLMClient:
+    """Calls the unified LLM service via HTTP — drop-in replacement for rg_llm."""
+
+    def __init__(self, fallback_order=None):
+        self.fallback_order = fallback_order or ["groq", "openai", "anthropic", "google"]
+
+    async def complete(self, request, user_keys=None):
+        payload = {
+            "messages": request.get("messages") if isinstance(request, dict) else getattr(request, "messages", []),
+            "stream": False,
+        }
+        # Extract fields from request (dict or object)
+        for field in ("provider", "model", "temperature", "max_tokens", "response_format", "tools"):
+            val = request.get(field) if isinstance(request, dict) else getattr(request, field, None)
+            if val is not None:
+                payload[field] = val
+        if user_keys:
+            payload["user_api_keys"] = user_keys
+
+        try:
+            async with httpx.AsyncClient(timeout=90.0) as client:
+                resp = await client.post(f"{LLM_SERVICE_URL}/v1/chat/completions", json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    choice = (data.get("choices") or [{}])[0]
+                    msg = choice.get("message", {})
+                    return _HTTPLLMResponse(
+                        content=msg.get("content", ""),
+                        provider=data.get("provider", "unknown"),
+                        model=data.get("model", ""),
+                        usage=data.get("usage", {}),
+                    )
+                else:
+                    raise RuntimeError(f"LLM service returned {resp.status_code}: {resp.text[:200]}")
+        except httpx.TimeoutException:
+            raise RuntimeError("LLM service timed out")
+        except httpx.ConnectError:
+            raise RuntimeError("LLM service unreachable")
+
+
+_llm_client = _HTTPLLMClient(
     fallback_order=["groq", "openai", "anthropic", "google"],
 )
 
@@ -75,8 +125,6 @@ _INTERNAL_SERVICE_KEY = os.getenv("AUTH_INTERNAL_SERVICE_KEY") or os.getenv("INT
 
 # DSID-P Protocol Integration
 try:
-    import sys
-    sys.path.insert(0, '/Users/devswat/resonantgenesis_backend/blockchain_service')
     from app.reputation_trust import AgentTrustScore, get_trust_tier, TrustTier
     from app.semantic_taxonomy import SemanticRiskRating, get_agent_cluster
     DSIDP_AVAILABLE = True
@@ -134,7 +182,7 @@ class AgentExecutor:
     # into the system message by _get_next_action).  This template just
     # supplies the current goal, context, history, available tools, and
     # the JSON response format.
-    EXECUTION_FRAME = """Current goal: {goal}
+    EXECUTION_FRAME = """Goal: {goal}
 
 Context:
 {context}
@@ -142,43 +190,26 @@ Context:
 Previous steps:
 {history}
 
-Available tools:
-{tools}
+You have access to 159+ tools and 44 platform services (560+ APIs). Call any by name.
+Tools: web_search, fetch_url, execute_code, generate_image, gmail_send, slack_send, http_request, dev_tool, memory_read, memory_write, create_rabbit_post, google_calendar, figma, etc.
+APIs: Use discover_services(category="ai|core|agents|community|developer|integrations|blockchain|storage") to find services.
+      Use platform_api(service="name", endpoint="/path", method="GET|POST", body={{...}}) to call any service API.
+      Use discover_api(service="name") to list a service's endpoints.
 
 Rules:
-- "web_search" returns titles + URLs only. Use "fetch_url" to read page content.
-- If a tool call fails ONCE, do NOT retry it. Respond with what you know.
-- Maximum 20 tool calls per session. After that you MUST respond.
-- ONLY use action tools (create_rabbit_post, http_request, etc.) when the goal EXPLICITLY asks you to create, post, send, build, or modify something.
-- If the goal is a question, answer it directly after gathering info. Do NOT invent actions.
-- "http_request" ONLY works with known internal platform APIs (rabbit_api_service, auth_service, etc.). Do NOT invent or guess API endpoints. If you don't know the exact URL, do NOT use http_request.
-- "external_http_request" makes HTTP requests to ANY external URL (APIs, websites, webhooks). Use this for third-party APIs like GitHub, Slack, weather, etc. Supports GET/POST/PUT/PATCH/DELETE with headers and JSON body.
-- "dev_tool" bridges to ED service for file ops, git, docker, testing. Pass {{tool_name: "list"}} to see all, or {{tool_name: "read_file", parameters: {{path: "..."}}}}
-- "execute_code" runs code in a secure Docker sandbox. Supports: python, javascript, bash. Pass {{code, language}}. No network access inside sandbox. Use for data processing, calculations, text manipulation.
-- "figma" accesses Figma API. Pass {{action: "list_files"}} or {{action: "get_file", file_key: "abc123"}} or {{action: "components", file_key: "abc123"}}. Requires user's Figma token (BYOK).
-- "google_calendar" accesses Google Calendar. Pass {{action: "list_events", days: 7}} or {{action: "create_event", title: "Meeting", start: "2026-03-01T10:00:00"}}. Requires Google OAuth token (BYOK).
-- "google_drive" accesses Google Drive. Pass {{action: "list"}} or {{action: "search", query: "quarterly report"}}. Requires Google OAuth token (BYOK).
-- "sigma" accesses Sigma Computing. Pass {{action: "list_workbooks"}} or {{action: "get_workbook", workbook_id: "abc123"}}. Requires Sigma API token (BYOK).
-- "generate_image" creates images via DALL-E 3. Requires user's OpenAI API key (BYOK). If missing key error, tell user to add key in Settings > API Keys.
-- "generate_audio" creates speech audio via OpenAI TTS. Pass text + optional voice (alloy/echo/fable/onyx/nova/shimmer). Requires user's OpenAI key.
-- "generate_music" generates music/songs via Suno API. Requires user's Suno API key (BYOK). If missing key, tell user to add their Suno key.
-- "generate_video" generates video via Replicate API. Requires user's Replicate API key (BYOK). If missing key, tell user to add their Replicate key.
-- If a tool returns a missing API key error, tell the user exactly which key to add in Settings > API Keys. Do NOT retry or loop.
-- If the goal requires a capability you don't have, respond immediately explaining what you can and cannot do. Do NOT loop trying workarounds.
-- "gmail_send" sends an email via Gmail. Pass {{to, subject, body}}. Requires user's Gmail OAuth connection.
-- "gmail_read" reads recent emails from Gmail inbox. Pass {{max_results, query (optional Gmail search)}}. Requires Gmail OAuth.
-- "slack_send_message" sends a message to a Slack channel. Pass {{channel, text}}. Requires user's Slack OAuth connection.
-- "slack_list_channels" lists Slack channels the bot can access. Pass {{limit (optional)}}.
-- "slack_read_messages" reads recent messages from a Slack channel. Pass {{channel, limit (optional)}}.
-- ED Service tools (require workspace_id in tool_input): File ops: "read_file", "write_file", "list_files", "search_files", "search_content", "delete_file". Git: "git_clone", "git_status", "git_add", "git_commit", "git_push", "git_pull", "git_log", "git_diff", "git_checkout". Docker: "docker_build", "docker_run", "docker_stop", "docker_logs", "docker_ps". Testing: "run_pytest", "run_jest", "run_lint", "run_coverage". Also: "validate_code", "trigger_workflow", "ask_llm", "log_insight", "get_current_time".
+- Call tools by exact name. If a tool fails, do NOT retry.
+- Max 12 tool calls per session. Then you MUST respond.
+- Only take actions when the goal explicitly asks to create/post/send/modify.
+- Questions: gather info then answer directly.
+- Missing API key: tell user to add it in Settings > API Keys.
 
 Respond in JSON:
 {{
-    "reasoning": "Your thought process",
-    "action": "tool_call|think|respond",
-    "tool_name": "name of tool if action is tool_call",
+    "reasoning": "brief thought",
+    "action": "tool_call|respond",
+    "tool_name": "exact tool name",
     "tool_input": {{}},
-    "response": "final response if action is respond",
+    "response": "final answer if action is respond",
     "goal_achieved": true/false
 }}"""
 
@@ -187,36 +218,61 @@ You can use tools to research information and take actions.
 Answer questions directly. Only perform actions when explicitly asked."""
 
     def __init__(self):
-        self.tool_handlers: Dict[str, callable] = {}
-        self.register_tool_handler("web_search", self._tool_web_search)
-        self.register_tool_handler("fetch_url", self._tool_fetch_url)
-        self.register_tool_handler("memory.read", self._tool_memory_read)
-        self.register_tool_handler("memory.write", self._tool_memory_write)
-        # Platform action tools (backed by shared/tools/)
-        self.register_tool_handler("create_rabbit_post", self._tool_create_rabbit_post)
-        self.register_tool_handler("list_rabbit_communities", self._tool_list_rabbit_communities)
-        self.register_tool_handler("create_rabbit_community", self._tool_create_rabbit_community)
-        self.register_tool_handler("http_request", self._tool_http_request)
-        self.register_tool_handler("generate_image", self._tool_generate_image)
-        self.register_tool_handler("generate_audio", self._tool_generate_audio)
-        self.register_tool_handler("generate_music", self._tool_generate_music)
-        self.register_tool_handler("generate_video", self._tool_generate_video)
-        # Phase 2.5: Gmail + Slack tools (backed by shared/tools/)
-        self.register_tool_handler("gmail_send", self._tool_gmail_send)
-        self.register_tool_handler("gmail_read", self._tool_gmail_read)
-        self.register_tool_handler("slack_send_message", self._tool_slack_send_message)
-        self.register_tool_handler("slack_list_channels", self._tool_slack_list_channels)
-        self.register_tool_handler("slack_read_messages", self._tool_slack_read_messages)
-        # Phase 0 tools: external HTTP + code execution
-        self.register_tool_handler("external_http_request", self._tool_external_http_request)
-        self.register_tool_handler("execute_code", self._tool_execute_code)
-        # Phase 0.4: Integration skill tools (Figma, Google Calendar, Google Drive, Sigma)
-        self.register_tool_handler("figma", self._tool_figma)
-        self.register_tool_handler("google_calendar", self._tool_google_calendar)
-        self.register_tool_handler("google_drive", self._tool_google_drive)
-        self.register_tool_handler("sigma", self._tool_sigma)
-        # ED service bridge: file ops, git, docker, testing
-        self.register_tool_handler("dev_tool", self._tool_dev_bridge)
+        # === UNIFIED TOOL REGISTRY: Single source of truth ===
+        from .rg_tool_registry.builtin_tools import build_registry
+        self._registry = build_registry()
+
+        # Handler map: tool_name → executor method
+        # The _tool_* methods contain the actual implementation logic.
+        # This map wires them to the unified registry tool names.
+        self._handler_map: Dict[str, callable] = {
+            # Search
+            "web_search": self._tool_web_search,
+            "fetch_url": self._tool_fetch_url,
+            "read_webpage": self._tool_fetch_url,
+            # Memory
+            "memory_read": self._tool_memory_read,
+            "memory.read": self._tool_memory_read,
+            "memory_write": self._tool_memory_write,
+            "memory.write": self._tool_memory_write,
+            # Community
+            "create_rabbit_post": self._tool_create_rabbit_post,
+            "list_rabbit_communities": self._tool_list_rabbit_communities,
+            "create_rabbit_community": self._tool_create_rabbit_community,
+            # Developer
+            "http_request": self._tool_http_request,
+            "external_http_request": self._tool_external_http_request,
+            "execute_code": self._tool_execute_code,
+            "dev_tool": self._tool_dev_bridge,
+            # Media
+            "generate_image": self._tool_generate_image,
+            "generate_audio": self._tool_generate_audio,
+            "generate_music": self._tool_generate_music,
+            "generate_video": self._tool_generate_video,
+            # Integrations
+            "gmail_send": self._tool_gmail_send,
+            "gmail_read": self._tool_gmail_read,
+            "slack_send": self._tool_slack_send_message,
+            "slack_send_message": self._tool_slack_send_message,
+            "slack_list_channels": self._tool_slack_list_channels,
+            "slack_read": self._tool_slack_read_messages,
+            "slack_read_messages": self._tool_slack_read_messages,
+            "figma": self._tool_figma,
+            "google_calendar": self._tool_google_calendar,
+            "google_drive": self._tool_google_drive,
+            "sigma": self._tool_sigma,
+            # === UNIFIED API CATALOG: Call any platform service API ===
+            "platform_api": self._tool_platform_api,
+            "discover_services": self._tool_discover_services,
+            "discover_api": self._tool_discover_api,
+            # === DYNAMIC TOOL MANAGEMENT ===
+            "create_tool": self._tool_create_tool,
+            "list_tools": self._tool_list_tools,
+            "delete_tool": self._tool_delete_tool,
+            "update_tool": self._tool_update_tool,
+            "auto_build_tool": self._tool_auto_build_tool,
+            "check_tool_exists": self._tool_check_tool_exists,
+        }
 
         # Tool-level sandbox boundary: rate limiting, arg validation, resource access control
         if SANDBOX_BOUNDARY_AVAILABLE and create_default_sandbox:
@@ -369,20 +425,41 @@ Answer questions directly. Only perform actions when explicitly asked."""
             connect=5.0,
         )
 
+        _RETRYABLE_STATUSES = (502, 503, 504)
+        _MAX_RETRIES = 2
+        _RETRY_DELAY = 1.5
+
         t0 = time.monotonic()
         print(f"[SANDBOX-RUNNER] POST {runner_url}/v1/http-get url={url[:80]} timeout={timeout_seconds}", flush=True)
 
+        resp = None
+        last_error = None
+
         async with httpx.AsyncClient(timeout=timeout) as client:
-            try:
-                resp = await client.post(
-                    f"{runner_url}/v1/http-get",
-                    json=payload,
-                    headers=headers,
-                )
-            except Exception as e:
-                elapsed = int((time.monotonic() - t0) * 1000)
-                print(f"[SANDBOX-RUNNER] FAILED {elapsed}ms: {e}", flush=True)
-                return {"error": f"Sandbox runner request failed: {e}"}
+            for attempt in range(_MAX_RETRIES + 1):
+                try:
+                    resp = await client.post(
+                        f"{runner_url}/v1/http-get",
+                        json=payload,
+                        headers=headers,
+                    )
+                    if resp.status_code not in _RETRYABLE_STATUSES or attempt == _MAX_RETRIES:
+                        break
+                    print(f"[SANDBOX-RUNNER] {resp.status_code} on attempt {attempt+1}, retrying in {_RETRY_DELAY}s...", flush=True)
+                    await asyncio.sleep(_RETRY_DELAY)
+                except Exception as e:
+                    last_error = e
+                    if attempt == _MAX_RETRIES:
+                        elapsed = int((time.monotonic() - t0) * 1000)
+                        print(f"[SANDBOX-RUNNER] FAILED {elapsed}ms after {attempt+1} attempts: {e}", flush=True)
+                        return {"error": f"Sandbox runner request failed: {e}"}
+                    print(f"[SANDBOX-RUNNER] attempt {attempt+1} failed ({e}), retrying in {_RETRY_DELAY}s...", flush=True)
+                    await asyncio.sleep(_RETRY_DELAY)
+
+        if resp is None:
+            elapsed = int((time.monotonic() - t0) * 1000)
+            print(f"[SANDBOX-RUNNER] FAILED {elapsed}ms: no response", flush=True)
+            return {"error": f"Sandbox runner request failed: {last_error or 'unknown'}"}
 
         elapsed = int((time.monotonic() - t0) * 1000)
 
@@ -395,6 +472,8 @@ Answer questions directly. Only perform actions when explicitly asked."""
             except Exception:
                 detail = None
             print(f"[SANDBOX-RUNNER] HTTP {resp.status_code} {elapsed}ms detail={detail}", flush=True)
+            if resp.status_code in _RETRYABLE_STATUSES:
+                return {"error": f"Website blocked automated access (anti-bot protection). Try a different source or website for this information."}
             return {"error": detail or f"Sandbox runner HTTP {resp.status_code}"}
 
         print(f"[SANDBOX-RUNNER] OK {resp.status_code} {elapsed}ms len={len(resp.content)}", flush=True)
@@ -1298,6 +1377,146 @@ Answer questions directly. Only perform actions when explicitly asked."""
         except Exception as e:
             return {"error": f"ED tool '{tool_name}' failed: {e}"}
 
+    # ------------------------------------------------------------------
+    # Unified API Catalog: platform_api, discover_services, discover_api
+    # ------------------------------------------------------------------
+
+    async def _tool_platform_api(self, tool_input: Dict[str, Any], *, session: Optional[AgentSession] = None) -> Dict[str, Any]:
+        """Call ANY platform service API by service name + endpoint.
+
+        Usage: {service: "memory", endpoint: "/memories/search", method: "POST", body: {query: "..."}}
+        """
+        from .rg_tool_registry.api_catalog import get_service, SERVICES
+
+        service_name = (tool_input or {}).get("service", "").strip()
+        endpoint = (tool_input or {}).get("endpoint", "").strip()
+        method = (tool_input or {}).get("method", "GET").upper()
+        body = (tool_input or {}).get("body") or (tool_input or {}).get("params") or {}
+        headers_extra = (tool_input or {}).get("headers") or {}
+
+        if not service_name:
+            return {"error": f"Missing 'service'. Available: {', '.join(sorted(SERVICES.keys()))}"}
+        if not endpoint:
+            return {"error": "Missing 'endpoint'. Example: /health, /agents/, /memories/search"}
+
+        svc = get_service(service_name)
+        if not svc:
+            return {"error": f"Service '{service_name}' not found. Available: {', '.join(sorted(SERVICES.keys()))}"}
+
+        url = f"{svc.url.rstrip('/')}/{endpoint.lstrip('/')}"
+
+        headers = {"Content-Type": "application/json"}
+        internal_key = os.getenv("INTERNAL_SERVICE_KEY") or os.getenv("AUTH_INTERNAL_SERVICE_KEY", "")
+        if internal_key:
+            headers["x-internal-service-key"] = internal_key
+        if session and session.user_id:
+            headers["x-user-id"] = str(session.user_id)
+        headers.update(headers_extra)
+
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                resp = await client.request(method=method, url=url, json=body if method in ("POST", "PUT", "PATCH") else None,
+                                            params=body if method == "GET" else None, headers=headers)
+                try:
+                    data = resp.json()
+                except Exception:
+                    data = {"raw": resp.text[:2000]}
+
+                if resp.status_code < 400:
+                    return {"success": True, "status": resp.status_code, "data": data}
+                return {"error": f"HTTP {resp.status_code}", "data": data}
+        except httpx.ConnectError:
+            return {"error": f"Service '{service_name}' unreachable at {svc.url}"}
+        except Exception as e:
+            return {"error": f"platform_api failed: {str(e)[:300]}"}
+
+    async def _tool_discover_services(self, tool_input: Dict[str, Any], *, session: Optional[AgentSession] = None) -> Dict[str, Any]:
+        """Discover available platform services by category.
+
+        Usage: {} (no params = all) or {category: "ai"} or {search: "memory"}
+        """
+        from .rg_tool_registry.api_catalog import get_all_services, get_services_by_category, ServiceCategory
+
+        category = (tool_input or {}).get("category", "").strip().lower()
+        search = (tool_input or {}).get("search", "").strip().lower()
+
+        if category:
+            try:
+                cat = ServiceCategory(category)
+                services = get_services_by_category(cat)
+            except ValueError:
+                return {"error": f"Unknown category '{category}'. Valid: {', '.join(c.value for c in ServiceCategory)}"}
+        else:
+            services = get_all_services()
+
+        if search:
+            services = [s for s in services if search in s.name.lower() or search in s.description.lower()
+                        or any(search in c.lower() for c in s.capabilities)]
+
+        return {
+            "services": [
+                {
+                    "name": s.name,
+                    "category": s.category.value,
+                    "description": s.description,
+                    "capabilities": s.capabilities[:8],
+                }
+                for s in services
+            ],
+            "total": len(services),
+            "hint": "Use platform_api(service='name', endpoint='/path', method='GET|POST') to call any service",
+        }
+
+    async def _tool_discover_api(self, tool_input: Dict[str, Any], *, session: Optional[AgentSession] = None) -> Dict[str, Any]:
+        """Discover endpoints for a specific service by hitting its /openapi.json or /docs.
+
+        Usage: {service: "agent_engine"} or {service: "memory", search: "search"}
+        """
+        from .rg_tool_registry.api_catalog import get_service, SERVICES
+
+        service_name = (tool_input or {}).get("service", "").strip()
+        search = (tool_input or {}).get("search", "").strip().lower()
+
+        if not service_name:
+            return {"error": f"Missing 'service'. Available: {', '.join(sorted(SERVICES.keys()))}"}
+
+        svc = get_service(service_name)
+        if not svc:
+            return {"error": f"Service '{service_name}' not found. Available: {', '.join(sorted(SERVICES.keys()))}"}
+
+        # Try to fetch the OpenAPI spec
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(f"{svc.url.rstrip('/')}/openapi.json")
+                if resp.status_code == 200:
+                    spec = resp.json()
+                    paths = spec.get("paths", {})
+                    endpoints = []
+                    for path, methods in paths.items():
+                        for method, details in methods.items():
+                            if method in ("get", "post", "put", "patch", "delete"):
+                                summary = details.get("summary", "") or details.get("description", "")[:80]
+                                if search and search not in path.lower() and search not in summary.lower():
+                                    continue
+                                endpoints.append({"method": method.upper(), "path": path, "summary": summary})
+                    return {
+                        "service": service_name,
+                        "url": svc.url,
+                        "endpoints": endpoints[:50],
+                        "total": len(endpoints),
+                    }
+        except Exception:
+            pass
+
+        # Fallback: return known capabilities from catalog
+        return {
+            "service": service_name,
+            "url": svc.url,
+            "description": svc.description,
+            "capabilities": svc.capabilities,
+            "note": "OpenAPI spec not available — use capabilities as guidance for endpoint names",
+        }
+
     async def _get_user_api_key(self, session: Optional[AgentSession], provider: str) -> Optional[str]:
         """Fetch the user's API key for a given provider from auth_service (BYOK)."""
         if not session or not session.user_id:
@@ -1662,6 +1881,17 @@ Answer questions directly. Only perform actions when explicitly asked."""
         finally:
             self._record_session_learning(session, agent, _result, _step_history, _loop_start)
 
+    # Patterns for empty/meaningless goals that waste tokens
+    _EMPTY_GOAL_PATTERNS = [
+        re.compile(r"^incoming\s*$", re.IGNORECASE),
+        re.compile(r"^event:\s*$", re.IGNORECASE),
+        re.compile(r"^none\s*$", re.IGNORECASE),
+        re.compile(r"^null\s*$", re.IGNORECASE),
+        re.compile(r"^undefined\s*$", re.IGNORECASE),
+        re.compile(r"^test\s*$", re.IGNORECASE),
+        re.compile(r"^\s*$"),
+    ]
+
     async def _run_loop_inner(
         self,
         session: AgentSession,
@@ -1670,9 +1900,28 @@ Answer questions directly. Only perform actions when explicitly asked."""
         _step_history: list,
     ) -> Dict[str, Any]:
         """Inner run loop — separated to enable learning wrapper."""
+        # === EMPTY/MEANINGLESS GOAL INTERCEPTOR ===
+        # Reject goals that are empty, placeholder, or system noise BEFORE wasting tokens.
+        goal_raw = (session.current_goal or "").strip()
+        if not goal_raw or len(goal_raw) < 3:
+            session.status = "failed"
+            session.error_message = "Goal is empty or too short. Please provide a specific task."
+            session.completed_at = datetime.utcnow()
+            await db_session.commit()
+            return {"status": "failed", "error": session.error_message}
+
+        for pattern in self._EMPTY_GOAL_PATTERNS:
+            if pattern.search(goal_raw):
+                print(f"[INTERCEPTOR] Empty/meaningless goal rejected: {goal_raw[:80]}", flush=True)
+                session.status = "failed"
+                session.error_message = f"Goal '{goal_raw[:100]}' is not actionable. Please provide a specific task."
+                session.completed_at = datetime.utcnow()
+                await db_session.commit()
+                return {"status": "failed", "error": session.error_message}
+
         # === IMPOSSIBLE-GOAL INTERCEPTOR ===
         # Catch goals that require capabilities we don't have BEFORE entering the LLM loop.
-        goal_lower = (session.current_goal or "").strip()
+        goal_lower = goal_raw
         for pattern, response_msg in self._IMPOSSIBLE_GOAL_PATTERNS:
             if pattern.search(goal_lower):
                 print(f"[INTERCEPTOR] Goal blocked by impossible-goal pattern: {goal_lower[:80]}", flush=True)
@@ -1691,6 +1940,31 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 await db_session.commit()
                 return {"status": "completed", "output": response_msg}
 
+        # === BUDGET ENFORCEMENT: max_runs_per_day ===
+        _agent_sc = agent.safety_config if isinstance(agent.safety_config, dict) else {}
+        _max_runs_per_day = _agent_sc.get("max_runs_per_day")
+        if _max_runs_per_day and isinstance(_max_runs_per_day, int) and _max_runs_per_day > 0:
+            try:
+                from sqlalchemy import func as sa_func
+                today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+                count_result = await db_session.execute(
+                    select(sa_func.count(AgentSession.id)).where(
+                        AgentSession.agent_id == agent.id,
+                        AgentSession.started_at >= today_start,
+                    )
+                )
+                today_count = count_result.scalar() or 0
+                if today_count > _max_runs_per_day:
+                    session.status = "failed"
+                    session.error_message = (
+                        f"Daily run limit exceeded: {today_count}/{_max_runs_per_day} runs today"
+                    )
+                    session.completed_at = datetime.utcnow()
+                    await db_session.commit()
+                    return {"status": "failed", "error": session.error_message}
+            except Exception as e:
+                logger.warning(f"[BUDGET] max_runs_per_day check failed (non-fatal): {e}")
+
         # Learning loop: track start time for session duration recording
         _loop_start_time = time.time()
         _step_history = []
@@ -1699,21 +1973,55 @@ Answer questions directly. Only perform actions when explicitly asked."""
         user_id = str(session.user_id) if session.user_id else ""
         _user_keys = await self._fetch_user_byok_keys(user_id)
 
+        # Credit tracking for this session
+        _ctx = session.context or {}
+        _user_role = str(_ctx.get("user_role", "user")).lower()
+        _is_superuser = str(_ctx.get("is_superuser", "")).lower() in ("1", "true", "yes")
+        _unlimited = str(_ctx.get("unlimited_credits", "")).lower() in ("1", "true", "yes")
+        _is_privileged = _is_superuser or _unlimited or _user_role in ("platform_owner", "admin")
+        _has_byok = bool(_user_keys)
+        _credits_used_total = 0
+        _credits_balance = -1  # unknown until first deduction
+        _BILLING_URL = os.getenv("BILLING_SERVICE_URL", "http://billing_service:8000")
+        _CREDIT_COST_LLM = 20
+
         # Load safety rules
         await safety_envelope.load_rules(db_session, str(agent.id))
+
+        # ── INTELLIGENCE LAYER: Memory recall + learning injection ──
+        # Load relevant memories and past learnings BEFORE planning so the
+        # agent starts each session with accumulated knowledge.
+        _recalled_context = {}
+        try:
+            _recalled_context = await self._recall_agent_memory(
+                agent_id=str(agent.id),
+                user_id=user_id,
+                goal=session.current_goal,
+            )
+            if _recalled_context:
+                # Merge recalled context into session so planner + LLM can use it
+                ctx = session.context or {}
+                ctx["recalled_memories"] = _recalled_context.get("memories", [])
+                ctx["learned_patterns"] = _recalled_context.get("patterns", [])
+                ctx["past_successes"] = _recalled_context.get("past_successes", [])
+                session.context = ctx
+                logger.info(
+                    f"[INTELLIGENCE] Session {session.id}: recalled "
+                    f"{len(ctx.get('recalled_memories', []))} memories, "
+                    f"{len(ctx.get('learned_patterns', []))} patterns"
+                )
+        except Exception as e:
+            logger.warning(f"[INTELLIGENCE] Memory recall failed (non-fatal): {e}")
 
         # Mark session as running early to avoid long "initializing" states
         session.status = "running"
         await db_session.commit()
 
-        # Load available tools based on agent's tool_mode
-        tool_mode = getattr(agent, 'tool_mode', None) or 'smart'
-        tools = await self._load_tools(agent.tools or [], db_session, tool_mode=tool_mode)
-
-        # Create initial plan
+        # Create initial plan (tool names from unified registry)
+        _tool_names = [t.name for t in self._registry.get_all()]
         plan_data = await tool_planner.create_plan(
             goal=session.current_goal,
-            available_tools=tools,
+            available_tools=_tool_names,
             context=session.context,
         )
 
@@ -1747,7 +2055,22 @@ Answer questions directly. Only perform actions when explicitly asked."""
         loop_stabilizer.reset()
         
         try:
-            while session.loop_count < settings.MAX_LOOP_ITERATIONS:
+            # Per-agent max_loops from safety_config, fallback to global setting
+            _agent_max_loops = settings.MAX_LOOP_ITERATIONS
+            _agent_sc = agent.safety_config if isinstance(agent.safety_config, dict) else {}
+            if _agent_sc:
+                _per_agent = _agent_sc.get("max_loops")
+                if _per_agent and isinstance(_per_agent, int) and _per_agent >= 1:
+                    _agent_max_loops = _per_agent
+
+            # Per-agent max_tokens_per_run from safety_config (budget enforcement)
+            _agent_max_tokens = settings.MAX_TOKENS_PER_RUN
+            if _agent_sc.get("max_tokens_per_run"):
+                _per_agent_tokens = _agent_sc["max_tokens_per_run"]
+                if isinstance(_per_agent_tokens, int) and _per_agent_tokens > 0:
+                    _agent_max_tokens = _per_agent_tokens
+
+            while session.loop_count < _agent_max_loops:
                 # Check if session was cancelled
                 await db_session.refresh(session)
                 if session.status in ("cancelled", "paused"):
@@ -1757,7 +2080,6 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 step_result = await self._execute_step(
                     session=session,
                     agent=agent,
-                    tools=tools,
                     history=history,
                     db_session=db_session,
                     user_keys=_user_keys,
@@ -1772,7 +2094,24 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 })
                 session.loop_count += 1
                 session.last_activity_at = datetime.utcnow()
-                
+
+                # === BUDGET ENFORCEMENT: per-agent token limit ===
+                if (session.total_tokens_used or 0) >= _agent_max_tokens:
+                    logger.warning(
+                        f"Session {session.id}: token budget exceeded "
+                        f"({session.total_tokens_used}/{_agent_max_tokens})"
+                    )
+                    session.status = "failed"
+                    session.error_message = (
+                        f"Token budget exceeded: used {session.total_tokens_used} "
+                        f"of {_agent_max_tokens} max_tokens_per_run"
+                    )
+                    session.completed_at = datetime.utcnow()
+                    await db_session.commit()
+                    result = {"status": "failed", "error": session.error_message}
+                    self._record_session_learning(session, agent, result, _step_history, _loop_start_time)
+                    return result
+
                 # === VERIFICATION STEP (lightweight, no LLM call) ===
                 # Use hash-based loop detection only — the full LLM verifier
                 # doubles every LLM call and causes rate-limit hangs with Groq.
@@ -1817,7 +2156,7 @@ Answer questions directly. Only perform actions when explicitly asked."""
                         current_plan=plan_data,
                         completed_steps=history,
                         issue=f"Stability issue: {stability.reason}",
-                        available_tools=tools,
+                        available_tools=_tool_names,
                     )
                     plan.plan_data = plan_data
                     plan.steps = plan_data.get("steps", [])
@@ -1897,7 +2236,7 @@ Answer questions directly. Only perform actions when explicitly asked."""
                             current_plan=plan_data,
                             completed_steps=history,
                             issue=error,
-                            available_tools=tools,
+                            available_tools=_tool_names,
                         )
                         plan.plan_data = plan_data
                         plan.steps = plan_data.get("steps", [])
@@ -1916,8 +2255,8 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 await asyncio.sleep(1.5)
 
             # Loop limit reached
-            session.status = "failed"
-            session.error_message = "Maximum loop iterations reached"
+            session.status = "completed"
+            session.error_message = "Completed (loop limit reached)"
             session.completed_at = datetime.utcnow()
             await db_session.commit()
             result = {"status": "failed", "error": "Maximum iterations reached"}
@@ -1937,13 +2276,25 @@ Answer questions directly. Only perform actions when explicitly asked."""
         self,
         session: AgentSession,
         agent: AgentDefinition,
-        tools: List[ToolSpec],
         history: List[Dict[str, Any]],
         db_session: AsyncSession,
         user_keys: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Execute a single step in the agent loop."""
         start_time = time.time()
+
+        # Derive credit-tracking variables (needed for per-step billing)
+        user_id = str(session.user_id) if session.user_id else ""
+        _ctx = session.context or {}
+        _user_role = str(_ctx.get("user_role", "user")).lower()
+        _is_superuser = str(_ctx.get("is_superuser", "")).lower() in ("1", "true", "yes")
+        _unlimited = str(_ctx.get("unlimited_credits", "")).lower() in ("1", "true", "yes")
+        _is_privileged = _is_superuser or _unlimited or _user_role in ("platform_owner", "admin")
+        _has_byok = bool(user_keys)
+        _credits_used_total = 0
+        _credits_balance = -1
+        _BILLING_URL = os.getenv("BILLING_SERVICE_URL", "http://billing_service:8000")
+        _CREDIT_COST_LLM = 20
 
         # Create step record
         step = AgentStep(
@@ -1963,7 +2314,6 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 goal=session.current_goal,
                 context=session.context,
                 history=history,
-                tools=tools,
                 user_keys=user_keys,
             )
             logger.info(f"Session {session.id} step {session.loop_count}: action={action.get('action')} tool={action.get('tool_name')}")
@@ -1972,6 +2322,57 @@ Answer questions directly. Only perform actions when explicitly asked."""
             step_tokens = action.pop("_tokens_used", 0) or 0
             step.tokens_used = step_tokens
             session.total_tokens_used = (session.total_tokens_used or 0) + step_tokens
+
+            # --- Credit deduction per LLM call ---
+            _step_credit_info = {}
+            if not _is_privileged and user_id and user_id != "anonymous":
+                _llm_cost = 0 if _has_byok else _CREDIT_COST_LLM
+                if _llm_cost > 0:
+                    try:
+                        async with httpx.AsyncClient(timeout=5.0) as _hc:
+                            _dr = await _hc.post(
+                                f"{_BILLING_URL}/billing/credits/deduct",
+                                json={
+                                    "user_id": user_id,
+                                    "amount": _llm_cost,
+                                    "action": "agent_llm_call",
+                                    "description": f"Agent session {session.id} step {session.loop_count}",
+                                    "reference_id": str(session.id),
+                                    "reference_type": "agent_session",
+                                },
+                            )
+                            if _dr.status_code == 200:
+                                _dd = _dr.json()
+                                _credits_balance = _dd.get("balance", 0)
+                                _credits_used_total += _llm_cost
+                                _step_credit_info = {
+                                    "credits_deducted": _llm_cost,
+                                    "credits_balance": _credits_balance,
+                                    "credits_used_total": _credits_used_total,
+                                }
+                                if _credits_balance <= 0:
+                                    _step_credit_info["credit_warning"] = "zero"
+                                elif _credits_balance < 3000:
+                                    _step_credit_info["credit_warning"] = "low"
+                                logger.info(f"[Credits] Session {session.id} step {session.loop_count}: deducted {_llm_cost}, balance={_credits_balance}")
+                            elif _dr.status_code == 402:
+                                _step_credit_info = {"credit_warning": "zero", "credits_balance": 0, "credits_exhausted": True}
+                                logger.warning(f"[Credits] Session {session.id}: credits exhausted mid-loop at step {session.loop_count}")
+                    except Exception as _ce:
+                        logger.warning(f"[Credits] Deduction failed for session {session.id}: {_ce}")
+
+            # Stop execution if credits exhausted mid-loop
+            if _step_credit_info.get("credits_exhausted"):
+                step.reasoning = action.get("reasoning")
+                step.step_type = "respond"
+                step.output_data = {"error": "credits_exhausted", "message": "Credits exhausted during agent execution.", **_step_credit_info}
+                duration_ms = int((time.time() - start_time) * 1000)
+                step.duration_ms = duration_ms
+                session.status = "failed"
+                session.error_message = "Credits exhausted. Please upgrade your plan or purchase credits."
+                session.completed_at = datetime.utcnow()
+                await db_session.commit()
+                return {"error": "credits_exhausted", "credits_balance": 0}
 
             step.reasoning = action.get("reasoning")
             step.step_type = action.get("action", "think")
@@ -2013,23 +2414,8 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 risk_level = risk_map.get(action_risk, RiskLevel.LOW)
 
                 tool_name = str(action.get("tool_name", "")) if action.get("action") == "tool_call" else ""
-                # Tools that are safe to auto-execute without approval
-                auto_approve_tools = (
-                    "web_search", "fetch_url", "memory.read", "memory.write",
-                    "create_rabbit_post", "list_rabbit_communities",
-                    "create_rabbit_community", "http_request",
-                    "execute_code", "external_http_request",
-                    "figma", "google_calendar", "google_drive", "sigma",
-            "dev_tool",
-                    # ED Service tools (Phase 1.3)
-                    "validate_code", "read_file", "list_files", "search_files",
-                    "search_content", "memory_search", "memory_store",
-                    "trigger_workflow", "ask_llm", "log_insight", "get_current_time",
-                    "git_status", "git_log", "git_diff", "git_branch",
-                    "docker_ps", "docker_images", "docker_logs",
-                    "run_pytest", "run_jest", "run_lint", "run_coverage",
-                )
-                if tool_name in auto_approve_tools:
+                # ALL platform tools are auto-approved (security at sandbox layer)
+                if tool_name:
                     risk_level = RiskLevel.LOW
                 
                 gate_request = ExecutionRequest(
@@ -2040,10 +2426,7 @@ Answer questions directly. Only perform actions when explicitly asked."""
                     risk_level=risk_level,
                     estimated_cost=self._estimate_action_cost(action) if hasattr(self, '_estimate_action_cost') else 0.0,
                     requires_financial=action.get("action") == "tool_call" and "payment" in str(action.get("tool_name", "")),
-                    requires_real_world_effect=(
-                        action.get("action") == "tool_call"
-                        and tool_name not in auto_approve_tools
-                    ),
+                    requires_real_world_effect=False,
                     parameters=action.get("tool_input", {}),
                 )
                 
@@ -2160,7 +2543,6 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 result = await self._execute_tool(
                     tool_name=action.get("tool_name"),
                     tool_input=action.get("tool_input", {}),
-                    tools=tools,
                     session=session,
                 )
                 step.tool_name = action.get("tool_name")
@@ -2169,16 +2551,21 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 session.total_tool_calls += 1
 
             elif action.get("action") == "respond":
-                result = {"response": action.get("response")}
+                result = {"response": action.get("response"), **_step_credit_info}
                 step.output_data = result
                 return {
                     "goal_achieved": action.get("goal_achieved", True),
                     "response": action.get("response"),
+                    "credits_used": _credits_used_total,
+                    "credits_balance": _credits_balance,
                 }
 
             else:  # think
                 result = {"thought": action.get("reasoning")}
 
+            # Merge credit info into step output for SSE streaming
+            if _step_credit_info:
+                result = {**result, **_step_credit_info}
             step.output_data = result
             duration_ms = int((time.time() - start_time) * 1000)
             step.duration_ms = duration_ms
@@ -2255,12 +2642,10 @@ Answer questions directly. Only perform actions when explicitly asked."""
         goal: str,
         context: Dict[str, Any],
         history: List[Dict[str, Any]],
-        tools: List[ToolSpec],
         user_keys: Optional[Dict[str, str]] = None,
     ) -> Dict[str, Any]:
         """Get the agent's next action using UnifiedLLMClient."""
-        tools_desc = self._format_tools(tools)
-        history_str = self._format_history(history[-10:]) if history else "No previous steps."
+        history_str = self._format_history(history[-5:]) if history else "No previous steps."
         context_str = json.dumps(context, indent=2)
 
         system_prompt = agent.system_prompt or self.DEFAULT_SYSTEM_PROMPT
@@ -2269,14 +2654,12 @@ Answer questions directly. Only perform actions when explicitly asked."""
             goal=goal,
             context=context_str,
             history=history_str,
-            tools=tools_desc,
         )
 
         # Phase 2.4: Inject learning recommendations into prompt
         try:
             ll = get_learning_loop()
-            tool_names = [t.get("name", "") for t in tools] if isinstance(tools, list) else []
-            recs = ll.get_recommendations(goal, tool_names)
+            recs = ll.get_recommendations(goal, list(self._handler_map.keys()))
             if recs.get("confidence", 0) > 0.3:
                 hints = []
                 for seq in recs.get("suggested_sequences", [])[:2]:
@@ -2285,6 +2668,21 @@ Answer questions directly. Only perform actions when explicitly asked."""
                     hints.append(f"Avoid: {avoid['error'][:60]} (seen {avoid['occurrences']}x)")
                 if hints:
                     prompt += "\n\nLearned patterns from past executions:\n- " + "\n- ".join(hints)
+        except Exception:
+            pass
+
+        # ── INTELLIGENCE: Inject recalled memories + past successes ──
+        try:
+            recalled_memories = (context or {}).get("recalled_memories", [])
+            past_successes = (context or {}).get("past_successes", [])
+            if recalled_memories:
+                mem_lines = [m[:300] for m in recalled_memories[:3]]
+                prompt += "\n\nRelevant memories from past interactions:\n- " + "\n- ".join(mem_lines)
+            if past_successes:
+                success_lines = []
+                for ps in past_successes[:3]:
+                    success_lines.append(f"Goal: {ps.get('goal', '')[:100]} → completed in {ps.get('steps', '?')} steps")
+                prompt += "\n\nPast successful tasks:\n- " + "\n- ".join(success_lines)
         except Exception:
             pass
 
@@ -2299,14 +2697,14 @@ Answer questions directly. Only perform actions when explicitly asked."""
         preferred = _alias.get(agent_provider.lower(), agent_provider.lower()) if agent_provider else None
 
         response = await _llm_client.complete(
-            LLMRequest(
-                messages=messages,
-                provider=preferred,
-                model=agent.model or None,
-                temperature=agent.temperature or 0.7,
-                max_tokens=agent.max_tokens or 2048,
-                response_format={"type": "json_object"},
-            ),
+            {
+                "messages": messages,
+                "provider": preferred,
+                "model": agent.model or None,
+                "temperature": agent.temperature or 0.7,
+                "max_tokens": agent.max_tokens or 2048,
+                "response_format": {"type": "json_object"},
+            },
             user_keys=user_keys,
         )
 
@@ -2337,7 +2735,6 @@ Answer questions directly. Only perform actions when explicitly asked."""
         self,
         tool_name: str,
         tool_input: Dict[str, Any],
-        tools: List[ToolSpec],
         session: AgentSession,
     ) -> Dict[str, Any]:
         """Execute a tool and return the result (with observability)."""
@@ -2360,7 +2757,7 @@ Answer questions directly. Only perform actions when explicitly asked."""
             tool_name, user_id=str(_user_id), agent_id=str(_agent_id),
             loop_number=_loop_num, args=tool_input,
         ) as _obs:
-            result = await self._execute_tool_inner(tool_name, tool_input, tools, session)
+            result = await self._execute_tool_inner(tool_name, tool_input, session)
             if isinstance(result, dict) and result.get("error"):
                 _obs.set_error(result["error"])
             else:
@@ -2371,84 +2768,41 @@ Answer questions directly. Only perform actions when explicitly asked."""
         self,
         tool_name: str,
         tool_input: Dict[str, Any],
-        tools: List[ToolSpec],
         session: AgentSession,
     ) -> Dict[str, Any]:
-        """Inner tool execution logic (called by _execute_tool with observability wrapper)."""
-        tool = next((t for t in tools if t.name == tool_name), None)
+        """Dispatch tool execution through unified registry + handler map."""
 
-        # Fallback: if tool not in the list but we have an internal handler, use it
-        if not tool:
-            handler = self.tool_handlers.get(tool_name)
-            if handler:
-                logger.info(f"Tool '{tool_name}' not in tools list but has internal handler — executing directly")
-                try:
-                    return await handler(tool_input, session=session)
-                except Exception as e:
-                    return {"error": str(e)}
-            # Phase 1.3: Proxy to ed_service for file/git/docker/workflow tools
-            logger.info(f"Tool '{tool_name}' not found locally — trying ed_service proxy")
+        # 1. Check handler map (executor-implemented tools)
+        handler = self._handler_map.get(tool_name)
+        if handler:
+            try:
+                return await handler(tool_input, session=session)
+            except Exception as e:
+                return {"error": str(e)}
+
+        # 2. Proxy to ed_service for file/git/docker/workflow tools
+        if tool_name in self.ED_SERVICE_TOOLS:
             try:
                 ed_result = await self._proxy_to_ed_service(tool_name, tool_input or {}, session=session)
                 if ed_result is not None:
                     return ed_result
             except Exception as e:
                 logger.warning(f"ed_service proxy failed for '{tool_name}': {e}")
-            logger.warning(f"Tool '{tool_name}' not found in tools list ({[t.name for t in tools]}), no internal handler, and ed_service proxy failed")
-            return {"error": f"Tool not found: {tool_name}"}
 
-        try:
-            if tool.handler_type == "http":
-                config = tool.handler_config or {}
-                url = config.get("url")
-                method = config.get("method", "POST")
+        # 3. Check if tool exists in unified registry (may have http/webhook config)
+        tool_def = self._registry.get(tool_name)
+        if tool_def and tool_def.handler:
+            # Try ed_service proxy as generic fallback for registry tools
+            try:
+                ed_result = await self._proxy_to_ed_service(tool_name, tool_input or {}, session=session)
+                if ed_result is not None:
+                    return ed_result
+            except Exception:
+                pass
 
-                async with httpx.AsyncClient(timeout=30.0) as client:
-                    response = await client.request(
-                        method=method,
-                        url=url,
-                        json=tool_input,
-                    )
-                    if response.status_code == 200:
-                        return response.json()
-                    return {"error": f"HTTP {response.status_code}"}
-
-            elif tool.handler_type == "webhook":
-                config = tool.handler_config or {}
-                url = config.get("url") or config.get("webhook_url")
-                if not url:
-                    return {"error": "Webhook tool has no URL configured"}
-                method = config.get("method", "POST").upper()
-                headers = dict(config.get("headers") or {})
-                if config.get("auth_header") and config.get("auth_value"):
-                    headers[config["auth_header"]] = config["auth_value"]
-                if config.get("webhook_secret"):
-                    headers["x-webhook-secret"] = config["webhook_secret"]
-                headers.setdefault("Content-Type", "application/json")
-
-                async with httpx.AsyncClient(timeout=45.0) as client:
-                    response = await client.request(
-                        method=method, url=url, json=tool_input, headers=headers,
-                    )
-                    try:
-                        data = response.json()
-                    except Exception:
-                        data = {"raw": response.text[:2000]}
-                    if response.status_code < 400:
-                        return {"success": True, "data": data}
-                    return {"error": f"Webhook returned {response.status_code}", "data": data}
-
-            elif tool.handler_type == "internal":
-                handler = self.tool_handlers.get(tool_name)
-                if handler:
-                    return await handler(tool_input, session=session)
-                return {"error": f"No handler for tool: {tool_name}"}
-
-            else:
-                return {"error": f"Unknown handler type: {tool.handler_type}"}
-
-        except Exception as e:
-            return {"error": str(e)}
+        # 4. Tool not found anywhere
+        logger.warning(f"Tool '{tool_name}' — no handler in map, not in ED_SERVICE_TOOLS, not proxied")
+        return {"error": f"Tool '{tool_name}' not found. Available: {', '.join(sorted(self._handler_map.keys())[:20])}..."}
 
     # ------------------------------------------------------------------
     # Phase 1.3: ed_service tool proxy
@@ -2497,79 +2851,6 @@ Answer questions directly. Only perform actions when explicitly asked."""
             logger.warning(f"ed_service proxy error for '{tool_name}': {e}")
             return {"error": str(e)}
 
-    async def _load_tools(
-        self,
-        tool_names: List[str],
-        db_session: AsyncSession,
-        tool_mode: str = "smart",
-    ) -> List[ToolSpec]:
-        """Load tool definitions from unified registry + any custom DB tools.
-        
-        tool_mode='smart': Load ALL tools from unified registry.
-        tool_mode='manual': Load only the tools specified in tool_names.
-        """
-        from .rg_tool_registry.builtin_tools import build_registry
-
-        registry = build_registry()
-
-        # === Convert unified ToolDef → ToolSpec ===
-        def _to_spec(td) -> ToolSpec:
-            return ToolSpec(
-                name=td.name,
-                description=td.description,
-                parameters_schema=td.to_openai()["function"]["parameters"],
-                handler_type="internal",
-                category=td.category.value if td.category else "general",
-            )
-
-        if tool_mode == "smart":
-            specs = [_to_spec(td) for td in registry.get_all()]
-        else:
-            requested = set(n for n in (tool_names or []) if n and isinstance(n, str))
-            if not requested:
-                requested = {"web_search", "fetch_url"}
-            specs = [_to_spec(td) for td in registry.get_all() if td.name in requested]
-            # If manual mode got nothing, fall back to all
-            if not specs:
-                specs = [_to_spec(td) for td in registry.get_all()]
-
-        # === Merge any custom DB tools (user-created HTTP/webhook tools) ===
-        try:
-            result = await db_session.execute(
-                select(ToolDefinition)
-                .where(ToolDefinition.is_active == True)
-                .where(ToolDefinition.handler_type.in_(["http", "webhook"]))
-            )
-            custom_tools = result.scalars().all()
-            registry_names = {s.name for s in specs}
-            for ct in custom_tools:
-                if ct.name not in registry_names:
-                    specs.append(ToolSpec(
-                        name=ct.name,
-                        description=ct.description or "",
-                        parameters_schema=ct.parameters_schema,
-                        handler_type=ct.handler_type or "http",
-                        handler_config=ct.handler_config,
-                        category=ct.category or "custom",
-                        id=str(ct.id),
-                    ))
-        except Exception as e:
-            logger.warning(f"[_load_tools] Custom DB tools merge failed: {e}")
-
-        return specs
-
-    def _format_tools(self, tools: List[ToolSpec]) -> str:
-        """Format tools for prompt."""
-        if not tools:
-            return "No tools available."
-        
-        lines = []
-        for tool in tools:
-            lines.append(f"- {tool.name}: {tool.description}")
-            if tool.parameters_schema:
-                lines.append(f"  Parameters: {json.dumps(tool.parameters_schema)}")
-        return "\n".join(lines)
-
     def _format_history(self, history: List[Dict[str, Any]]) -> str:
         """Format history in a structured way the LLM can learn from."""
         if not history:
@@ -2588,8 +2869,8 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 result = step.get("result") or {}
                 # Truncate large results
                 result_str = json.dumps(result, ensure_ascii=False)
-                if len(result_str) > 800:
-                    result_str = result_str[:800] + "...(truncated)"
+                if len(result_str) > 400:
+                    result_str = result_str[:400] + "...(truncated)"
                 lines.append(f"Step {i+1}: Used {tool}({json.dumps(tool_input)})")
                 if error:
                     lines.append(f"  ERROR: {error}")
@@ -2607,9 +2888,201 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 lines.append(f"  FEEDBACK: {feedback}")
         return "\n".join(lines)
 
+    # ------------------------------------------------------------------
+    # Dynamic Tool Management — delegates to routers_agentic_chat handlers
+    # These let Agent Engine sessions create/manage tools
+    # ------------------------------------------------------------------
+
+    async def _tool_create_tool(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_create_tool
+        ctx = self._build_tool_ctx(session)
+        return await _custom_create_tool(tool_input, ctx)
+
+    async def _tool_list_tools(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_list_tools
+        ctx = self._build_tool_ctx(session)
+        return await _custom_list_tools(tool_input, ctx)
+
+    async def _tool_delete_tool(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_delete_tool
+        ctx = self._build_tool_ctx(session)
+        return await _custom_delete_tool(tool_input, ctx)
+
+    async def _tool_update_tool(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_update_tool
+        ctx = self._build_tool_ctx(session)
+        return await _custom_update_tool(tool_input, ctx)
+
+    async def _tool_auto_build_tool(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_auto_build_tool
+        ctx = self._build_tool_ctx(session)
+        return await _custom_auto_build_tool(tool_input, ctx)
+
+    async def _tool_check_tool_exists(self, tool_input: dict, session=None):
+        from .routers_agentic_chat import _custom_check_tool_exists
+        ctx = self._build_tool_ctx(session)
+        return await _custom_check_tool_exists(tool_input, ctx)
+
+    def _build_tool_ctx(self, session) -> dict:
+        """Build a context dict from session for tool management handlers."""
+        if session:
+            return {
+                "user_id": str(session.user_id) if hasattr(session, 'user_id') else
+                           (session.get("user_id") if isinstance(session, dict) else "agent-system"),
+                "org_id": (session.context.get("org_id", "") if hasattr(session, 'context') else ""),
+                "user_role": (session.context.get("user_role", "user") if hasattr(session, 'context') else "user"),
+            }
+        return {"user_id": "agent-system", "org_id": "", "user_role": "system"}
+
     def register_tool_handler(self, name: str, handler: callable):
-        """Register an internal tool handler."""
-        self.tool_handlers[name] = handler
+        """Register a tool handler into the unified handler map."""
+        self._handler_map[name] = handler
+
+    # ── INTELLIGENCE LAYER: Memory recall + learning persistence ──────
+
+    async def _recall_agent_memory(
+        self,
+        agent_id: str,
+        user_id: str,
+        goal: str,
+    ) -> Dict[str, Any]:
+        """Recall relevant memories and learned patterns before a session starts.
+
+        This is the key intelligence bridge — agents don't start from zero.
+        They load:
+        1. Relevant memories from Hash Sphere (past interactions, facts)
+        2. Learned patterns from the learning loop (successful sequences, errors to avoid)
+        3. Past successes for similar goals
+        """
+        result: Dict[str, Any] = {"memories": [], "patterns": [], "past_successes": []}
+
+        # 1. Recall from Hash Sphere / Memory Service
+        try:
+            url = f"{settings.MEMORY_SERVICE_URL.rstrip('/')}/memory/retrieve"
+            payload = {
+                "query": goal[:500],
+                "user_id": user_id or agent_id,
+                "agent_id": agent_id,
+                "top_k": 5,
+                "min_relevance": 0.3,
+            }
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    memories = data.get("results") or data.get("memories") or []
+                    for mem in memories[:5]:
+                        content = mem.get("content") or mem.get("text") or str(mem)
+                        if isinstance(content, str) and len(content) > 10:
+                            result["memories"].append(content[:500])
+                    if result["memories"]:
+                        logger.info(f"[INTELLIGENCE] Recalled {len(result['memories'])} memories for agent {agent_id}")
+        except Exception as e:
+            logger.debug(f"[INTELLIGENCE] Memory recall skipped: {e}")
+
+        # 2. Load learned patterns from learning loop
+        try:
+            ll = get_learning_loop()
+            recs = ll.get_recommendations(goal, list(self._handler_map.keys()))
+            if recs.get("confidence", 0) > 0.2:
+                for seq in recs.get("suggested_sequences", [])[:3]:
+                    result["patterns"].append({
+                        "type": "proven_sequence",
+                        "sequence": seq.get("sequence", []),
+                        "success_rate": seq.get("success_rate", 0),
+                    })
+                for avoid in recs.get("patterns_to_avoid", [])[:3]:
+                    result["patterns"].append({
+                        "type": "avoid",
+                        "error": avoid.get("error", "")[:200],
+                        "occurrences": avoid.get("occurrences", 0),
+                    })
+        except Exception as e:
+            logger.debug(f"[INTELLIGENCE] Learning recall skipped: {e}")
+
+        # 3. Load past successes for similar goals from DB
+        try:
+            from sqlalchemy import select
+            from .db import async_session
+            async with async_session() as db:
+                from .models import AgentSession
+                stmt = (
+                    select(AgentSession)
+                    .where(
+                        AgentSession.agent_id == agent_id,
+                        AgentSession.status == "completed",
+                    )
+                    .order_by(AgentSession.completed_at.desc())
+                    .limit(5)
+                )
+                rows = await db.execute(stmt)
+                sessions = rows.scalars().all()
+                for s in sessions:
+                    past_goal = s.current_goal or ""
+                    if past_goal and len(past_goal) > 5:
+                        result["past_successes"].append({
+                            "goal": past_goal[:200],
+                            "steps": s.loop_count or 0,
+                            "output_preview": (s.final_output or "")[:200],
+                        })
+        except Exception as e:
+            logger.debug(f"[INTELLIGENCE] Past successes recall skipped: {e}")
+
+        return result
+
+    async def _persist_learning_to_memory(
+        self,
+        agent_id: str,
+        user_id: str,
+        goal: str,
+        outcome: str,
+        patterns: List[Dict[str, Any]],
+    ):
+        """Persist learned patterns to Memory Service so they survive restarts.
+
+        Called after _record_session_learning to make the in-memory learning
+        loop patterns durable via Hash Sphere.
+        """
+        if not patterns:
+            return
+
+        # Build a compact learning summary
+        pattern_lines = []
+        for p in patterns[:5]:
+            ptype = p.get("type", "pattern")
+            if ptype == "proven_sequence":
+                seq = " → ".join(p.get("sequence", []))
+                pattern_lines.append(f"Proven: {seq} (success {p.get('success_rate', 0):.0%})")
+            elif ptype == "avoid":
+                pattern_lines.append(f"Avoid: {p.get('error', '')[:100]}")
+            else:
+                pattern_lines.append(f"{ptype}: {json.dumps(p)[:150]}")
+
+        content = (
+            f"Agent learning from goal: {goal[:200]}\n"
+            f"Outcome: {outcome}\n"
+            f"Patterns:\n" + "\n".join(f"- {l}" for l in pattern_lines)
+        )
+
+        try:
+            url = f"{settings.MEMORY_SERVICE_URL.rstrip('/')}/memory/ingest"
+            payload = {
+                "content": content,
+                "user_id": user_id or agent_id,
+                "agent_id": agent_id,
+                "metadata": {
+                    "type": "agent_learning",
+                    "goal": goal[:200],
+                    "outcome": outcome,
+                    "pattern_count": len(patterns),
+                },
+            }
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(url, json=payload)
+                if resp.status_code in (200, 201):
+                    logger.info(f"[INTELLIGENCE] Persisted {len(patterns)} patterns for agent {agent_id}")
+        except Exception as e:
+            logger.debug(f"[INTELLIGENCE] Failed to persist learning: {e}")
 
     def _estimate_action_cost(self, action: Dict[str, Any]) -> float:
         """
@@ -2655,8 +3128,10 @@ Answer questions directly. Only perform actions when explicitly asked."""
         
         This enables PERSISTENT LEARNING - agents improve over time.
         Called at the end of every run_loop execution.
+        Records to in-memory learning loop AND persists to Memory Service.
         """
         import time
+        _patterns_to_persist: List[Dict[str, Any]] = []
         try:
             loop = get_learning_loop()
             duration = time.time() - start_time
@@ -2674,8 +3149,42 @@ Answer questions directly. Only perform actions when explicitly asked."""
                 context=session.context or {},
             )
             logger.info(f"[LEARNING] Recorded session {session.id} outcome: {result.get('status')}")
+
+            # Extract patterns for persistence
+            recs = loop.get_recommendations(
+                session.current_goal or "",
+                list(self._handler_map.keys()),
+            )
+            if recs.get("confidence", 0) > 0.2:
+                for seq in recs.get("suggested_sequences", [])[:3]:
+                    _patterns_to_persist.append({
+                        "type": "proven_sequence",
+                        "sequence": seq.get("sequence", []),
+                        "success_rate": seq.get("success_rate", 0),
+                    })
+                for avoid in recs.get("patterns_to_avoid", [])[:3]:
+                    _patterns_to_persist.append({
+                        "type": "avoid",
+                        "error": avoid.get("error", "")[:200],
+                        "occurrences": avoid.get("occurrences", 0),
+                    })
         except Exception as e:
             logger.warning(f"[LEARNING] Failed to record: {e}")
+
+        # Persist to Memory Service (durable across restarts)
+        if _patterns_to_persist:
+            import asyncio
+            try:
+                user_id = str(session.user_id) if session.user_id else ""
+                asyncio.ensure_future(self._persist_learning_to_memory(
+                    agent_id=str(agent.id),
+                    user_id=user_id,
+                    goal=session.current_goal or "",
+                    outcome=result.get("status", "unknown"),
+                    patterns=_patterns_to_persist,
+                ))
+            except Exception as e:
+                logger.debug(f"[LEARNING] Persistence dispatch failed: {e}")
 
         # Phase 3.4: Record agent behavior for value drift detection
         try:

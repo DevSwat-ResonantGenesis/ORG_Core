@@ -22,6 +22,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .db import get_session
+from .config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -329,11 +330,15 @@ async def trigger_agent_webhook(
     agent_id: str,
     request: Request,
     x_webhook_signature: Optional[str] = Header(None),
+    x_internal_service_key: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_session),
 ):
     """
     Trigger an agent via webhook.
     This is the PUBLIC endpoint that external services (Discord, GitHub, etc.) call.
+    
+    Internal services can bypass signature verification by providing valid
+    X-Internal-Service-Key header (must match INTERNAL_SERVICE_KEY env var).
     """
     webhook_path = f"/webhooks/agent/{agent_id}/trigger"
 
@@ -352,10 +357,12 @@ async def trigger_agent_webhook(
     if not trigger:
         raise HTTPException(status_code=404, detail="Webhook trigger not found for this agent")
 
-    # Internal services (e.g. discord_bridge) on the Docker network can skip signature validation
-    is_internal = request.headers.get("x-internal-service") == "discord_bridge"
+    # Internal services can bypass signature verification with valid INTERNAL_SERVICE_KEY
+    is_internal = False
+    if x_internal_service_key and settings.INTERNAL_SERVICE_KEY:
+        is_internal = x_internal_service_key == settings.INTERNAL_SERVICE_KEY
 
-    # Verify signature if secret is configured (skip for internal callers)
+    # Verify signature if secret is configured (skip for authenticated internal callers)
     if trigger.get("webhook_secret") and not is_internal:
         if not x_webhook_signature:
             raise HTTPException(status_code=401, detail="Missing webhook signature")
@@ -363,7 +370,7 @@ async def trigger_agent_webhook(
         if not verify_webhook_signature(body_bytes, x_webhook_signature, trigger["webhook_secret"]):
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-    # Check debounce (skip for discord messages — users expect real-time)
+    # Check debounce (skip for internal service calls)
     if not is_internal and trigger.get("last_triggered_at"):
         elapsed = (datetime.now(timezone.utc) - trigger["last_triggered_at"]).total_seconds()
         if elapsed < trigger.get("debounce_seconds", 5):

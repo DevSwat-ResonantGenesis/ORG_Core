@@ -1,6 +1,6 @@
 """Agent Engine API routers."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import hashlib
 import json
@@ -384,11 +384,9 @@ class AgentCreate(BaseModel):
     tools: Optional[List[str]] = None
     mode: Optional[str] = "governed"  # governed or unbounded
     safety_config: Optional[Dict[str, Any]] = None
+    budget_config: Optional[Dict[str, Any]] = None  # {max_tokens_per_run, max_runs_per_day}
     allowed_actions: Optional[List[str]] = None
     blocked_actions: Optional[List[str]] = None
-    # OpenClaw federation
-    agent_source: Optional[str] = "cloud"  # cloud | openclaw
-    openclaw_config: Optional[Dict[str, Any]] = None
 
 
 class AgentResponse(BaseModel):
@@ -406,9 +404,6 @@ class AgentResponse(BaseModel):
     agent_public_hash: Optional[str] = None
     agent_version_hash: Optional[str] = None
     dsid: Optional[str] = None
-    # OpenClaw federation
-    agent_source: str = "cloud"
-    openclaw_config: Optional[Dict[str, Any]] = None
 
 
 class SessionCreate(BaseModel):
@@ -1479,7 +1474,7 @@ async def create_agent(
         user_role = (request.headers.get("x-user-role") or "user").strip().lower()
         is_superuser = (request.headers.get("x-is-superuser") or "").strip().lower() in {"1", "true", "yes", "on"}
         unlimited_credits = (request.headers.get("x-unlimited-credits") or "").strip().lower() in {"1", "true", "yes", "on"}
-        privileged_roles = {"owner", "platform_owner", "admin", "superuser"}
+        privileged_roles = {"platform_owner", "admin", "superuser"}
         privileged_bypass = is_superuser or unlimited_credits or user_role in privileged_roles
 
         from uuid import UUID as PyUUID
@@ -1577,6 +1572,14 @@ async def create_agent(
         agent_public_hash = _compute_agent_public_hash(agent_id=str(agent_id), owner_user_id=str(user_uuid))
         safety_config["agent_hash"] = agent_public_hash
 
+        # Merge budget_config into safety_config for per-agent enforcement
+        if payload.budget_config and isinstance(payload.budget_config, dict):
+            bc = payload.budget_config
+            if bc.get("max_tokens_per_run"):
+                safety_config["max_tokens_per_run"] = int(bc["max_tokens_per_run"])
+            if bc.get("max_runs_per_day"):
+                safety_config["max_runs_per_day"] = int(bc["max_runs_per_day"])
+
         resolved_mode = (payload.mode or "governed").strip().lower()
         if resolved_mode not in ("governed", "unbounded"):
             resolved_mode = "governed"
@@ -1585,9 +1588,7 @@ async def create_agent(
         if resolved_tool_mode not in ("smart", "manual"):
             resolved_tool_mode = "smart"
 
-        resolved_source = (payload.agent_source or "cloud").strip().lower()
-        if resolved_source not in ("cloud", "openclaw"):
-            resolved_source = "cloud"
+        resolved_source = "cloud"
 
         org_id_raw = request.headers.get("x-org-id")
         org_uuid = None
@@ -1617,7 +1618,6 @@ async def create_agent(
             agent_public_hash=agent_public_hash,
             agent_version_hash=str(safety_config.get("manifest_hash") or ""),
             agent_source=resolved_source,
-            openclaw_config=payload.openclaw_config,
         )
 
         session.add(agent)
@@ -1645,8 +1645,6 @@ async def create_agent(
             agent_public_hash=agent.agent_public_hash,
             agent_version_hash=agent.agent_version_hash,
             dsid=(agent.safety_config or {}).get("dsid"),
-            agent_source=getattr(agent, 'agent_source', None) or 'cloud',
-            openclaw_config=getattr(agent, 'openclaw_config', None),
         )
     except HTTPException:
         # Re-raise HTTPException without wrapping (e.g., 429 agent limit)
@@ -1739,8 +1737,6 @@ async def list_agents(
                     agent_public_hash=a.agent_public_hash,
                     agent_version_hash=a.agent_version_hash,
                     dsid=(a.safety_config or {}).get("dsid"),
-                    agent_source=getattr(a, 'agent_source', None) or 'cloud',
-                    openclaw_config=getattr(a, 'openclaw_config', None),
                 )
             )
 
@@ -1883,7 +1879,7 @@ async def instantiate_agent_template(
         system_prompt=template.system_prompt,
         model=template.model,
         temperature=0.7,
-        max_tokens=4096,
+        max_tokens=128000,
         tools=template.tools,
         allowed_actions=None,
         blocked_actions=None,
@@ -1900,7 +1896,7 @@ async def instantiate_agent_template(
         system_prompt=template.system_prompt,
         model=template.model,
         temperature=0.7,
-        max_tokens=4096,
+        max_tokens=128000,
         tools=template.tools,
         safety_config={
             "manifest_hash": manifest_hash,
@@ -1934,7 +1930,6 @@ async def instantiate_agent_template(
         agent_version_hash=agent.agent_version_hash,
         dsid=(agent.safety_config or {}).get("dsid"),
         agent_source=getattr(agent, 'agent_source', None) or 'cloud',
-        openclaw_config=getattr(agent, 'openclaw_config', None),
     )
 
 
@@ -1967,12 +1962,348 @@ async def list_available_tools():
     ]
 
 
+@router.post("/tools/execute")
+async def execute_tool_direct(request: Request):
+    """Execute a platform tool directly (no agent session required).
+
+    Used by external integrations and inter-service calls.
+    Body: {tool_name: str, tool_input: dict, user_id?: str}
+    """
+    from .executor import AgentExecutor
+
+    body = await request.json()
+    tool_name = body.get("tool_name", "").strip()
+    tool_input = body.get("tool_input", body.get("parameters", {}))
+
+    if not tool_name:
+        raise HTTPException(status_code=400, detail="Missing tool_name")
+
+    # Extract user context from headers or body (for tool management)
+    user_id = (
+        request.headers.get("x-user-id")
+        or body.get("user_id")
+        or "anonymous"
+    )
+
+    executor = AgentExecutor()
+
+    # Build a lightweight session-like object for tools that need user context
+    _TOOL_MGMT = {"create_tool", "list_tools", "delete_tool", "update_tool",
+                   "auto_build_tool", "check_tool_exists"}
+
+    # Handler map
+    handler = executor._handler_map.get(tool_name)
+    if handler:
+        try:
+            if tool_name in _TOOL_MGMT:
+                # Tool management needs user context — build a mock session
+                class _Ctx:
+                    pass
+                mock = _Ctx()
+                mock.user_id = user_id
+                mock.context = {
+                    "org_id": request.headers.get("x-org-id", ""),
+                    "user_role": request.headers.get("x-user-role", "user"),
+                }
+                result = await handler(tool_input, session=mock)
+            else:
+                result = await handler(tool_input, session=None)
+            return {"success": True, "tool_name": tool_name, "result": result}
+        except Exception as e:
+            return {"success": False, "tool_name": tool_name, "error": str(e)}
+
+    # ED service proxy
+    if tool_name in executor.ED_SERVICE_TOOLS:
+        try:
+            result = await executor._proxy_to_ed_service(tool_name, tool_input or {}, session=None)
+            if result is not None:
+                return {"success": True, "tool_name": tool_name, "result": result}
+        except Exception as e:
+            return {"success": False, "tool_name": tool_name, "error": str(e)}
+
+    # Try dynamic custom tools (user-created or shared)
+    try:
+        from .routers_agentic_chat import _execute_dynamic_custom_tool
+        ctx = {"user_id": user_id}
+        result = await _execute_dynamic_custom_tool(tool_name, tool_input or {}, ctx)
+        if not result.get("error", "").startswith("Custom tool"):
+            return {"success": True, "tool_name": tool_name, "result": result}
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+
+
+@router.get("/tools/list")
+async def list_platform_tools():
+    """List all platform tools with descriptions."""
+    from .rg_tool_registry.builtin_tools import build_registry
+    registry = build_registry()
+    all_tools = registry.get_all()
+    return [
+        {
+            "name": td.name,
+            "description": td.description,
+            "category": td.category.value if hasattr(td.category, 'value') else str(td.category),
+            "params": [p.to_dict() if hasattr(p, 'to_dict') else {"name": p.name} for p in (td.params or [])],
+        }
+        for td in all_tools
+    ]
+
+
+# ════════════════════════════════════════════════════════════════════
+# FEDERATION — External agents running on user hardware
+# ════════════════════════════════════════════════════════════════════
+
+class FederationRegisterRequest(BaseModel):
+    name: str = Field(..., min_length=1, max_length=100)
+    description: str = Field(default="Federated agent")
+    connection_url: Optional[str] = None  # URL where agent is reachable (optional)
+    hardware_info: Optional[Dict[str, Any]] = None  # CPU, RAM, GPU, OS
+    client_version: Optional[str] = None  # e.g. "openclaw-ext/1.2.0"
+    capabilities: Optional[List[str]] = None  # what the agent can do locally
+    tools: Optional[List[str]] = None  # platform tools to assign
+    provider: str = "groq"
+    model: str = "llama-3.3-70b-versatile"
+
+
+class FederationHeartbeatRequest(BaseModel):
+    agent_id: str
+    status: str = "online"  # online, busy, idle
+    metrics: Optional[Dict[str, Any]] = None  # cpu_pct, mem_mb, active_tasks, etc.
+
+
+@router.post("/federation/register")
+async def federation_register(
+    body: FederationRegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    """Register an external agent running on user hardware.
+
+    Creates a platform agent with agent_source='federated' and stores
+    federation metadata (connection_url, hardware_info, client_version).
+    The agent gets access to all platform tools via execute-tool-direct.
+    """
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
+
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
+    federation_config = {
+        "connection_url": body.connection_url,
+        "hardware_info": body.hardware_info or {},
+        "client_version": body.client_version,
+        "capabilities": body.capabilities or [],
+        "registered_at": now.isoformat(),
+        "last_heartbeat": now.isoformat(),
+        "status": "online",
+    }
+
+    # Build system prompt
+    tools = body.tools or ["web_search", "fetch_url", "memory_read", "memory_write", "http_request"]
+    tools_csv = ", ".join(tools)
+    system_prompt = (
+        f"You are '{body.name}', a federated AI agent running on user hardware "
+        f"and connected to the Resonant Genesis platform.\n\n"
+        f"YOUR ROLE: {body.description}\n\n"
+        f"PLATFORM TOOLS: {tools_csv}\n"
+        f"You have full access to 200+ platform tools via the unified registry. "
+        f"Use discover_services and check_tool_exists to find additional tools.\n"
+    )
+
+    # Compute hashes
+    raw_hash = f"{user_id}:{body.name}:{now.isoformat()}"
+    agent_public_hash = hashlib.sha256(raw_hash.encode()).hexdigest()
+
+    safety_config = {
+        "mode": "governed",
+        "max_steps_per_run": 25,
+        "max_tokens_per_run": 50000,
+        "rate_limit_per_minute": 30,
+        "federated": True,
+    }
+
+    agent = AgentDefinition(
+        user_id=user_id,
+        name=body.name,
+        description=body.description,
+        system_prompt=system_prompt,
+        provider=body.provider,
+        model=body.model,
+        temperature=0.6,
+        max_tokens=128000,
+        tools=tools,
+        safety_config=safety_config,
+        allowed_actions=tools,
+        blocked_actions=["delete_community", "delete_user", "admin_override"],
+        agent_public_hash=agent_public_hash,
+        agent_version_hash=hashlib.sha256(system_prompt.encode()).hexdigest(),
+        agent_source="federated",
+        openclaw_config=federation_config,  # DB column reused for federation metadata
+        mode="governed",
+        is_active=True,
+    )
+
+    db.add(agent)
+    await db.commit()
+    await db.refresh(agent)
+
+    logger.info(f"[FEDERATION] Registered agent '{body.name}' ({agent.id}) from {body.connection_url or 'unknown'}")
+
+    return {
+        "success": True,
+        "agent_id": str(agent.id),
+        "agent_public_hash": agent_public_hash,
+        "tools": tools,
+        "endpoints": {
+            "heartbeat": "/agents/federation/heartbeat",
+            "execute_tool": "/agents/execute-tool-direct",
+            "tools_list": "/agents/tools/list",
+            "execute": f"/agents/{agent.id}/execute",
+        },
+        "message": f"Agent '{body.name}' registered. Use heartbeat endpoint to stay connected.",
+    }
+
+
+@router.post("/federation/heartbeat")
+async def federation_heartbeat(
+    body: FederationHeartbeatRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    """Heartbeat from a federated agent running on user hardware."""
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
+
+    result = await db.execute(
+        select(AgentDefinition).where(
+            AgentDefinition.id == body.agent_id,
+            AgentDefinition.user_id == user_id,
+            AgentDefinition.agent_source == "federated",
+        )
+    )
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Federated agent not found")
+
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
+    # Update federation metadata
+    config = agent.openclaw_config or {}
+    config["last_heartbeat"] = now.isoformat()
+    config["status"] = body.status
+    if body.metrics:
+        config["last_metrics"] = body.metrics
+    agent.openclaw_config = config
+
+    # Force SQLAlchemy to detect the JSONB change
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(agent, "openclaw_config")
+
+    await db.commit()
+
+    return {"success": True, "agent_id": body.agent_id, "status": body.status, "ack": now.isoformat()}
+
+
+@router.get("/federation/agents")
+async def federation_list_agents(
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    """List all federated agents for the authenticated user with connection status."""
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
+
+    result = await db.execute(
+        select(AgentDefinition).where(
+            AgentDefinition.user_id == user_id,
+            AgentDefinition.agent_source == "federated",
+            AgentDefinition.is_active == True,
+        )
+    )
+    agents = result.scalars().all()
+
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+
+    items = []
+    for a in agents:
+        config = a.openclaw_config or {}
+        last_hb = config.get("last_heartbeat")
+        online = False
+        if last_hb:
+            try:
+                hb_time = datetime.fromisoformat(last_hb)
+                online = (now - hb_time).total_seconds() < 300  # 5 min threshold
+            except Exception:
+                pass
+
+        items.append({
+            "agent_id": str(a.id),
+            "name": a.name,
+            "description": a.description,
+            "connection_url": config.get("connection_url"),
+            "client_version": config.get("client_version"),
+            "hardware_info": config.get("hardware_info"),
+            "capabilities": config.get("capabilities", []),
+            "status": "online" if online else "offline",
+            "last_heartbeat": last_hb,
+            "tools": a.tools or [],
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        })
+
+    return {"agents": items, "total": len(items)}
+
+
+@router.post("/federation/disconnect/{agent_id}")
+async def federation_disconnect(
+    agent_id: str,
+    request: Request,
+    db: AsyncSession = Depends(get_session),
+):
+    """Disconnect a federated agent (marks inactive, keeps data)."""
+    user_id = request.headers.get("x-user-id")
+    if not user_id:
+        raise HTTPException(status_code=401, detail="User ID required")
+
+    result = await db.execute(
+        select(AgentDefinition).where(
+            AgentDefinition.id == agent_id,
+            AgentDefinition.user_id == user_id,
+            AgentDefinition.agent_source == "federated",
+        )
+    )
+    agent = result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Federated agent not found")
+
+    agent.is_active = False
+    config = agent.openclaw_config or {}
+    config["status"] = "disconnected"
+    config["disconnected_at"] = datetime.now().isoformat()
+    agent.openclaw_config = config
+
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(agent, "openclaw_config")
+
+    await db.commit()
+
+    logger.info(f"[FEDERATION] Disconnected agent '{agent.name}' ({agent_id})")
+    return {"success": True, "agent_id": agent_id, "status": "disconnected"}
+
+
 @router.get("/capabilities")
 async def list_agent_capabilities():
-    from .agent_executor import get_agent_executor
-
-    executor = await get_agent_executor()
-    tools = executor.tool_registry.get_all_schemas()
+    from .rg_tool_registry.builtin_tools import build_registry
+    from .rg_tool_registry.registry import ToolAccess
+    registry = build_registry()
+    tools = [t.to_openai() for t in registry.get_tools(access=ToolAccess.AGENT)]
 
     bundles = [
         CapabilityBundle(
@@ -2077,10 +2408,7 @@ async def get_platform_metrics(
                 AgentDefinition.user_id == user_uuid,
                 AgentDefinition.org_id == org_uuid,
             ))
-            session_filter.append(or_(
-                AgentSession.user_id == user_uuid,
-                AgentSession.org_id == org_uuid,
-            ))
+            session_filter.append(AgentSession.user_id == user_uuid)
         else:
             agent_filter.append(AgentDefinition.user_id == user_uuid)
             session_filter.append(AgentSession.user_id == user_uuid)
@@ -2163,10 +2491,7 @@ async def get_platform_metrics_summary(
                 AgentDefinition.user_id == user_uuid,
                 AgentDefinition.org_id == org_uuid,
             ))
-            session_filter.append(or_(
-                AgentSession.user_id == user_uuid,
-                AgentSession.org_id == org_uuid,
-            ))
+            session_filter.append(AgentSession.user_id == user_uuid)
         else:
             agent_filter.append(AgentDefinition.user_id == user_uuid)
             session_filter.append(AgentSession.user_id == user_uuid)
@@ -2286,6 +2611,25 @@ async def get_agent_run_metrics(
     }
 
 
+@router.get("/{agent_id}/collective-knowledge")
+async def agent_collective_knowledge(
+    agent_id: str,
+    query: Optional[str] = None,
+    request: Request = None,
+    session: AsyncSession = Depends(get_session),
+):
+    """Query collective knowledge for an agent. Delegates to collaboration hub if available."""
+    try:
+        from .agent_collaboration import get_collaboration_hub
+        hub = get_collaboration_hub()
+        if query:
+            results = await hub.knowledge.query_collective_knowledge(agent_id, query)
+            return {"results": results}
+        return {"results": [], "delegations": [], "agent_id": agent_id}
+    except Exception:
+        return {"results": [], "delegations": [], "agent_id": agent_id}
+
+
 @router.get("/{agent_id}/versions")
 async def list_agent_versions(
     agent_id: str,
@@ -2300,7 +2644,7 @@ async def list_agent_versions(
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid agent_id")
 
-    user_id = request.headers.get("x-user-id") if request else None
+    user_id = request.headers.get("x-user-id")
     if not user_id:
         raise HTTPException(status_code=401, detail="User ID required")
 
@@ -2407,7 +2751,6 @@ async def get_agent(
         agent_version_hash=agent.agent_version_hash,
         dsid=(agent.safety_config or {}).get("dsid"),
         agent_source=getattr(agent, 'agent_source', None) or 'cloud',
-        openclaw_config=getattr(agent, 'openclaw_config', None),
     )
 
 
@@ -2455,6 +2798,15 @@ async def patch_agent(
         if field in body:
             setattr(agent, field, body[field])
             updated.append(field)
+
+    # Handle max_loops convenience field → store in safety_config
+    if "max_loops" in body:
+        max_loops_val = body["max_loops"]
+        if isinstance(max_loops_val, int) and 1 <= max_loops_val <= 100:
+            sc = dict(agent.safety_config or {})
+            sc["max_loops"] = max_loops_val
+            agent.safety_config = sc
+            updated.append("max_loops")
 
     if not updated:
         raise HTTPException(status_code=400, detail="No valid fields to update")
@@ -2658,8 +3010,38 @@ async def start_session(
     session: AsyncSession = Depends(get_session),
 ):
     """Start a new agent session."""
+    from fastapi.responses import JSONResponse
+
     user_id = request.headers.get("x-user-id")
     org_id = request.headers.get("x-org-id")
+    user_role = (request.headers.get("x-user-role") or "user").strip().lower()
+    is_superuser = (request.headers.get("x-is-superuser") or "").strip().lower() in {"1", "true", "yes", "on"}
+    is_privileged = is_superuser or user_role in ("platform_owner", "admin")
+
+    # Credit pre-check: block zero-credit users from running agents
+    if not is_privileged and user_id and user_id != "anonymous":
+        try:
+            billing_url = os.getenv("BILLING_SERVICE_URL", "http://billing_service:8000")
+            async with httpx.AsyncClient(timeout=5.0) as hc:
+                bal_resp = await hc.get(f"{billing_url}/billing/credits/balance/{user_id}")
+                if bal_resp.status_code == 200:
+                    bal_data = bal_resp.json()
+                    balance = bal_data.get("balance", 0)
+                    if balance <= 0 and not bal_data.get("unlimited", False):
+                        logger.warning(f"[Credits] User {user_id[:8]}... blocked from starting session: 0 credits")
+                        return JSONResponse(
+                            status_code=402,
+                            content={
+                                "error": "insufficient_credits",
+                                "detail": "Credits exhausted. Please upgrade your plan or purchase credits to run agents.",
+                                "message": "Credits exhausted. Please upgrade your plan or purchase credits to run agents.",
+                                "action_url": "/pricing",
+                                "required": 100,
+                                "available": balance,
+                            },
+                        )
+        except Exception as e:
+            logger.warning(f"[Credits] Balance check failed for session start: {e}")
 
     try:
         agent_uuid = PyUUID(agent_id)
@@ -3058,12 +3440,13 @@ async def approve_step(
     session_id: str,
     step_id: str,
     approved: bool = True,
+    background_tasks: BackgroundTasks = None,
     session: AsyncSession = Depends(get_session),
 ):
     """Approve or reject a step requiring approval."""
     await approval_manager.grant_approval(step_id, approved, session)
 
-    # Resume session if approved
+    # Resume session if approved — re-enter the execution loop in background
     if approved:
         result = await session.execute(
             select(AgentSession).where(AgentSession.id == session_id)
@@ -3073,7 +3456,66 @@ async def approve_step(
             agent_session.status = "running"
             await session.commit()
 
+            # Re-enter execution loop in background so the session actually resumes
+            if background_tasks:
+                background_tasks.add_task(_resume_session_after_approval, str(session_id))
+    elif not approved:
+        # Rejected — mark session as failed
+        result = await session.execute(
+            select(AgentSession).where(AgentSession.id == session_id)
+        )
+        agent_session = result.scalar_one_or_none()
+        if agent_session and agent_session.status == "waiting_approval":
+            agent_session.status = "failed"
+            agent_session.error_message = "Step rejected by user"
+            agent_session.completed_at = datetime.utcnow()
+            await session.commit()
+
     return {"status": "approved" if approved else "rejected", "step_id": step_id}
+
+
+async def _resume_session_after_approval(session_id: str):
+    """Background task: re-enter execution loop for an approved session."""
+    try:
+        async with async_session() as db_session:
+            result = await db_session.execute(
+                select(AgentSession).where(AgentSession.id == session_id)
+            )
+            agent_session = result.scalar_one_or_none()
+            if not agent_session or agent_session.status != "running":
+                return
+
+            # Load the agent definition
+            agent_result = await db_session.execute(
+                select(AgentDefinition).where(AgentDefinition.id == agent_session.agent_id)
+            )
+            agent = agent_result.scalar_one_or_none()
+            if not agent:
+                return
+
+            # Re-enter the execution loop
+            await agent_executor._run_loop_inner(
+                session=agent_session,
+                agent=agent,
+                db_session=db_session,
+                _step_history=[],
+            )
+            await db_session.commit()
+    except Exception as e:
+        logger.error(f"Failed to resume session {session_id} after approval: {e}")
+        try:
+            async with async_session() as db_session:
+                result = await db_session.execute(
+                    select(AgentSession).where(AgentSession.id == session_id)
+                )
+                s = result.scalar_one_or_none()
+                if s and s.status == "running":
+                    s.status = "failed"
+                    s.error_message = f"Resume after approval failed: {str(e)[:200]}"
+                    s.completed_at = datetime.utcnow()
+                    await db_session.commit()
+        except Exception:
+            pass
 
 
 # ============== Governance Approvals Endpoints ==============
@@ -5053,6 +5495,21 @@ async def sse_session_stream(session_id: str, request: Request):
                         }
                         yield f"event: step\ndata: {json.dumps(step_data, default=str)}\n\n"
 
+                        # Emit token_usage event if step has token data
+                        _step_tokens = getattr(step, 'tokens_used', 0) or 0
+                        if _step_tokens > 0:
+                            yield f"event: token_usage\ndata: {json.dumps({'step': step.step_number, 'tokens': _step_tokens, 'total_tokens': session.total_tokens_used or 0})}\n\n"
+
+                        # Emit credit events from step output_data
+                        _out = step.output_data or {}
+                        if isinstance(_out, dict) and _out.get('credits_deducted'):
+                            yield f"event: credit_deduction\ndata: {json.dumps({'step': step.step_number, 'amount': _out['credits_deducted'], 'balance_after': _out.get('credits_balance', 0), 'total_used': _out.get('credits_used_total', 0)})}\n\n"
+                        if isinstance(_out, dict) and _out.get('credit_warning'):
+                            _cw_type = _out['credit_warning']
+                            _cw_bal = _out.get('credits_balance', 0)
+                            _cw_msg = 'Credits exhausted!' if _cw_type == 'zero' else f'Low credit balance: {_cw_bal} remaining'
+                            yield f"event: credit_warning\ndata: {json.dumps({'type': _cw_type, 'balance': _cw_bal, 'message': _cw_msg})}\n\n"
+
                     # Check terminal states
                     if current_status in ("completed", "failed", "cancelled"):
                         done_data = {
@@ -5061,6 +5518,7 @@ async def sse_session_stream(session_id: str, request: Request):
                             "error": session.error_message,
                             "total_tool_calls": session.total_tool_calls,
                             "loop_count": session.loop_count,
+                            "total_tokens": session.total_tokens_used or 0,
                         }
                         yield f"event: done\ndata: {json.dumps(done_data, default=str)}\n\n"
                         break

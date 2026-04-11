@@ -5,6 +5,7 @@ import uuid
 
 from sqlalchemy import Column, DateTime, Float, Integer, String, Text, Boolean, JSON, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, JSONB
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
 from .db import Base
@@ -26,7 +27,7 @@ class AgentDefinition(Base):
     provider = Column(String(64), nullable=True)  # e.g. openai, anthropic, groq, google, local
     model = Column(String(64), default="gpt-4-turbo-preview")
     temperature = Column(Float, default=0.7)
-    max_tokens = Column(Integer, default=4096)
+    max_tokens = Column(Integer, default=128000)
     
     # Capabilities
     tool_mode = Column(String(16), default="smart")  # smart = all tools auto, manual = only selected tools
@@ -57,13 +58,18 @@ class AgentDefinition(Base):
     published_as_api = Column(Boolean, default=False)
     api_rate_limit = Column(Integer, default=60)  # requests per minute
     
-    # OpenClaw federation
-    agent_source = Column(String(32), default="cloud", nullable=False)  # cloud | openclaw
-    openclaw_config = Column(JSONB, nullable=True)  # endpoint_url, hardware, capabilities, heartbeat, custom_skills
+    # Federation: "cloud" = platform-hosted, "federated" = runs on user hardware
+    agent_source = Column(String(32), default="cloud", nullable=False)
+    # Federation metadata: {last_heartbeat, connection_url, hardware_info, client_version, capabilities}
+    openclaw_config = Column(JSONB, nullable=True)  # DB column name kept for compat, used as federation_config
     
     archived_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+
+    # Relationships (back_populates for models_schedule.py)
+    schedules = relationship("AgentSchedule", back_populates="agent", lazy="selectin")
+    triggers = relationship("AgentTrigger", back_populates="agent", lazy="selectin")
 
 
 class AgentVersion(Base):
@@ -419,3 +425,5 @@ from .models_autonomy import (
     ApprovalRequest,
     ExecutionAuditEntry,
 )
+
+from .models_schedule import AgentSchedule, AgentTrigger, AgentExecution  # noqa: F401  — register with Base for relationships
