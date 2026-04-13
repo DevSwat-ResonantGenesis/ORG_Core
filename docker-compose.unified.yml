@@ -548,9 +548,17 @@ services:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
       LLM_SERVICE_URL: http://llm_service:8000
+      AUTH_SERVICE_URL: http://auth_service:8000
       BILLING_SERVICE_URL: http://billing_service:8000
       BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
-      AUTH_SERVICE_URL: http://auth_service:8000
+      NOTIFICATION_SERVICE_URL: http://notification_service:8000
+      CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
+      STORAGE_SERVICE_URL: http://storage_service:8000
+      WORKFLOW_SERVICE_URL: http://workflow_service:8000
+      GATEWAY_URL: http://gateway:8000
+      SANDBOX_RUNNER_URL: http://sandbox_runner_service:9001
+      AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
+      ED_SERVICE_URL: http://ed_service:8000
       PYTHONPATH: /app
     depends_on:
       - llm_service
@@ -743,10 +751,17 @@ services:
     environment:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
-      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-resonantgenesis.xyz}
+      MEMORY_SERVICE_URL: http://memory_service:8000
+      BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
+      MARKETPLACE_SERVICE_URL: http://marketplace_service:8000
+      LLM_SERVICE_URL: http://llm_service:8000
+      RARA_SERVICE_URL: ${RARA_SERVICE_URL:-http://rg_internal_invarients_sim:8093}
+      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-dev-swat.com}
       OPENCLAW_SERVICE_ENABLED: ${OPENCLAW_SERVICE_ENABLED:-true}
     depends_on:
       - agent_engine_service
+      - memory_service
     networks:
       - app-network
     restart: unless-stopped
