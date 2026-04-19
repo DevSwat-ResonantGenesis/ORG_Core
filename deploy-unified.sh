@@ -6,10 +6,10 @@ set -euo pipefail
 # Single docker-compose.unified.yml — no blue/green
 # ============================================
 
-DROPLET_IP="134.199.221.149"
-DROPLET_USER="root"
+DROPLET_IP="dev-swat.com"
+DROPLET_USER="deploy"
 DEPLOY_DIR="/home/deploy"
-COMPOSE_DIR="/root/genesis2026_production_backend"
+COMPOSE_DIR="/home/deploy/genesis2026_production_backend"
 
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -119,7 +119,7 @@ done
 
 # Also pull RG_core (contains docker-compose)
 echo -n "  ORG_Core (RG_core) ... "
-cd /root/genesis2026_production_backend
+cd /home/deploy/genesis2026_production_backend
 git pull --ff-only origin main 2>/dev/null && echo "✅" || (git fetch origin main && git reset --hard origin/main && echo "✅ (reset)")
 
 if [ -n "$FAILED" ]; then
@@ -138,7 +138,7 @@ section "STEP 3: Build & Deploy (docker-compose.unified.yml)"
 
 ssh -o StrictHostKeyChecking=no $DROPLET_USER@$DROPLET_IP << 'DEPLOY_EOF'
 set -e
-cd /root/genesis2026_production_backend
+cd /home/deploy/genesis2026_production_backend
 
 # Lock
 if [ -f "/tmp/deploy.lock" ]; then

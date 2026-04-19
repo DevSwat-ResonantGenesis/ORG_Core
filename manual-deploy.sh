@@ -8,8 +8,8 @@ echo "🚀 Manual Blue-Green Deployment"
 echo "============================"
 
 # Configuration
-DROPLET_IP="134.199.221.149"
-DROPLET_USER="root"
+DROPLET_IP="dev-swat.com"
+DROPLET_USER="deploy"
 
 echo "🌐 Target: $DROPLET_IP"
 echo "👤 User: $DROPLET_USER"
@@ -66,7 +66,7 @@ scp -o StrictHostKeyChecking=no -r \
     user_memory_service/ \
     user_service/ \
     workflow_service/ \
-    $DROPLET_USER@$DROPLET_IP:/root/genesis2026_production_backend/
+    $DROPLET_USER@$DROPLET_IP:/home/deploy/genesis2026_production_backend/
 
 if [ $? -eq 0 ]; then
     log "✅ Files transferred successfully"
@@ -82,7 +82,7 @@ ssh -o StrictHostKeyChecking=no $DROPLET_USER@$DROPLET_IP << 'EOF'
 set -e
 
 echo "🚀 Starting deployment on server..."
-cd /root/genesis2026_production_backend
+cd /home/deploy/genesis2026_production_backend
 
 # Check for existing deployment
 if [ -f "/tmp/blue-green-deployment.lock" ]; then

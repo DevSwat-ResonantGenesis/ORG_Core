@@ -5,9 +5,6 @@ networks:
 volumes:
   redis_data: null
   build_projects: null
-  blockchain_node_data: null
-  v8_data: null
-  v8_model: null
 services:
   shared_redis:
     image: redis:7-alpine
@@ -43,16 +40,12 @@ services:
       GATEWAY_BILLING_URL: http://billing_service:8000
       GATEWAY_MEMORY_URL: http://memory_service:8000
       GATEWAY_USER_URL: http://user_service:8000
-      GATEWAY_COGNITIVE_URL: http://cognitive_service:8000
       GATEWAY_WORKFLOW_URL: http://workflow_service:8000
-      GATEWAY_ML_URL: http://ml_service:8000
       GATEWAY_STORAGE_URL: http://storage_service:8000
-      GATEWAY_MARKETPLACE_URL: http://marketplace_service:8000
       GATEWAY_BLOCKCHAIN_URL: http://blockchain_service:8000
       GATEWAY_NOTIFICATION_URL: http://notification_service:8000
       GATEWAY_CRYPTO_URL: http://crypto_service:8000
       GATEWAY_IDE_URL: http://ide_service:8000
-      GATEWAY_BUILD_URL: http://build_service:8003
       GATEWAY_CODE_EXECUTION_URL: http://code_execution_service:8002
       GATEWAY_AGENT_ENGINE_URL: http://agent_engine_service:8000
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
@@ -227,29 +220,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-  cognitive_service:
-    build:
-      context: /home/deploy/RG_Cognitive
-      dockerfile: Dockerfile
-    container_name: cognitive_service
-    env_file:
-    - ./.env.production
-    environment:
-      DATABASE_URL: ${COGNITIVE_DATABASE_URL}
-      REDIS_URL: redis://shared_redis:6379/0
-      COGNITIVE_DB_POOL_CLASS: 'null'
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
   workflow_service:
     build:
       context: /home/deploy/RG_Workflow
@@ -261,29 +231,6 @@ services:
       DATABASE_URL: ${WORKFLOW_DATABASE_URL}
       WORKFLOW_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-  ml_service:
-    build:
-      context: /home/deploy/RG_ML_Service
-      dockerfile: Dockerfile
-    container_name: ml_service
-    env_file:
-    - ./.env.production
-    environment:
-      DATABASE_URL: ${ML_DATABASE_URL}
-      REDIS_URL: redis://shared_redis:6379/0
-      ML_DB_POOL_CLASS: 'null'
     networks:
     - app-network
     restart: unless-stopped
@@ -342,29 +289,6 @@ services:
       retries: 3
     volumes:
     - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
-  marketplace_service:
-    build:
-      context: /home/deploy/RG_Marketplace
-      dockerfile: Dockerfile
-    container_name: marketplace_service
-    env_file:
-    - ./.env.production
-    environment:
-      DATABASE_URL: ${MARKETPLACE_DATABASE_URL}
-      REDIS_URL: redis://shared_redis:6379/0
-      MARKETPLACE_DB_POOL_CLASS: 'null'
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
   blockchain_service:
     build:
       context: /home/deploy/RG_Blockchain
@@ -478,27 +402,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-  user_memory_service:
-    build:
-      context: /home/deploy/RG_User_Memory
-      dockerfile: Dockerfile
-    container_name: user_memory_service
-    env_file:
-    - ./.env.production
-    environment:
-      REDIS_URL: redis://shared_redis:6379/0
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8094/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
   ide_service:
     build:
       context: /home/deploy/RG_Axtention_IDE
@@ -522,27 +425,6 @@ services:
       - python
       - -c
       - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-  build_service:
-    build:
-      context: /home/deploy/RG_Build_Service
-      dockerfile: Dockerfile
-    container_name: build_service
-    env_file:
-    - ./.env.production
-    volumes:
-    - build_projects:/tmp/resonant_projects
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
@@ -683,26 +565,6 @@ services:
     restart: unless-stopped
     volumes:
     - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
-  discord_bridge:
-    build:
-      context: /home/deploy/RG_Discord_Bridge
-      dockerfile: Dockerfile
-    container_name: discord_bridge
-    env_file:
-    - ./.env.production
-    environment:
-      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
-      DISCORD_AGENT_ID: ${DISCORD_AGENT_ID:-}
-      DISCORD_OWNER_USER_ID: ${DISCORD_OWNER_USER_ID:-}
-      DISCORD_ALLOWED_CHANNELS: ${DISCORD_ALLOWED_CHANNELS:-}
-      AGENT_ENGINE_URL: http://agent_engine_service:8000
-      POLL_INTERVAL_SECONDS: '2'
-      POLL_TIMEOUT_SECONDS: '60'
-    depends_on:
-    - agent_engine_service
-    networks:
-    - app-network
-    restart: unless-stopped
   sandbox_runner_service:
     build:
       context: /home/deploy/RG_Sandbox_Runner
@@ -749,83 +611,6 @@ services:
       - python
       - -c
       - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-  v8_api_service:
-    build:
-      context: /home/deploy/RG_V8_API
-      dockerfile: Dockerfile
-    container_name: v8_api_service
-    env_file:
-    - ./.env.production
-    environment:
-      PORT: '8080'
-    volumes:
-    - v8_data:/app/data
-    - v8_model:/app/model
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-  openclaw_service:
-    build:
-      context: /home/deploy/RG_OpenClaw
-      dockerfile: Dockerfile
-    container_name: openclaw_service
-    env_file:
-    - ./.env.production
-    environment:
-      AGENT_ENGINE_URL: http://agent_engine_service:8000
-      AUTH_SERVICE_URL: http://auth_service:8000
-      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-resonantgenesis.xyz}
-      OPENCLAW_SERVICE_ENABLED: ${OPENCLAW_SERVICE_ENABLED:-true}
-    depends_on:
-    - agent_engine_service
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-  blockchain_node:
-    build:
-      context: /home/deploy/RG_Blockchain_Node
-      dockerfile: Dockerfile
-    container_name: blockchain_node
-    ports:
-    - 8081:8081
-    env_file:
-    - ./.env.production
-    environment:
-      NODE_ENV: production
-      NODE_HOST: 0.0.0.0
-      NODE_PORT: 8081
-    volumes:
-    - blockchain_node_data:/app/data
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - curl
-      - -f
-      - http://localhost:8081/status
       interval: 30s
       timeout: 10s
       retries: 3
