@@ -644,7 +644,7 @@ services:
       retries: 3
   lighthouse_service:
     build:
-      context: /home/deploy/RG_lighthouse
+      context: /home/deploy/RG_TrainingNet_Lighthouse
       dockerfile: Dockerfile
     container_name: lighthouse_service
     ports:
@@ -667,7 +667,7 @@ services:
       retries: 3
   external_blockchain_service:
     build:
-      context: /home/deploy/RG_external_blockchain
+      context: /home/deploy/RG_TrainingNet_Chain
       dockerfile: Dockerfile
     container_name: external_blockchain_service
     ports:
@@ -690,7 +690,7 @@ services:
       retries: 3
   mining_service:
     build:
-      context: /home/deploy/RG_Mining
+      context: /home/deploy/RG_TrainingNet_Mining
       dockerfile: Dockerfile
     container_name: mining_service
     ports:

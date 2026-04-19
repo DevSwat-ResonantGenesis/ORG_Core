@@ -51,10 +51,10 @@ git@github-devswat:DevSwat-ResonantGenesis/genesis2026_production_backend.git
 | `agent_architect` | RG_agent_architect | 8000 | Agent builder, prompt classifier |
 | `memory_service` | RG_Memory | 8000 | Semantic Memory Universe |
 | `llm_service` | RG_LLM_Service | 8000 | LLM provider abstraction |
-| `mining_service` | RG_Mining | 8000 | Distributed ML training + RGT mining |
+| `mining_service` | RG_TrainingNet_Mining | 8000 | Distributed ML training + RGT mining |
 | `blockchain_service` | RG_DSID_Blockchain | 8000 | DSID-P blockchain protocol |
 | `dsid_node` | RG_DSID_Node | 8081 | DSID external chain node (Base Sepolia) |
-| `external_blockchain_service` | RG_external_blockchain | 8000 | External chain bridges |
+| `external_blockchain_service` | RG_TrainingNet_Chain | 8000 | Training network chain (Raft consensus) |
 | `crypto_service` | RG_Crypto | 8000 | Crypto identity + wallet |
 | `notification_service` | RG_Notifications | 8000 | Push/email notifications |
 | `user_service` | RG_User_Service | 8000 | User profiles, preferences, dashboard |
@@ -67,7 +67,7 @@ git@github-devswat:DevSwat-ResonantGenesis/genesis2026_production_backend.git
 | `rg_ast_analysis` | RG_AST_analysis | 8000 | Code Visualizer — AST/SAST |
 | `rg_internal_invarients_sim` | RG_Internal_Invarients_SIM | 8000 | Internal governance sim |
 | `rg_users_invarients_sim` | RG_Users_Invarients_SIM | 8000 | User-facing invariants |
-| `lighthouse_service` | RG_lighthouse | 8000 | Performance auditing |
+| `lighthouse_service` | RG_TrainingNet_Lighthouse | 8000 | Peer discovery + network beacon |
 | `shared_redis` | (official image) | 6379 | Shared Redis cache |
 
 ### Ghost Services (in compose but repos don't exist — pending cleanup)

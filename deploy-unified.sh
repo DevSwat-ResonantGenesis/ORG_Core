@@ -47,9 +47,9 @@ REPOS=(
     "RG_Internal_Invarients_SIM"
     "RG_Users_Invarients_SIM"
     "RG_Ed_Service"
-    "RG_Mining"
-    "RG_lighthouse"
-    "RG_external_blockchain"
+    "RG_TrainingNet_Mining"
+    "RG_TrainingNet_Lighthouse"
+    "RG_TrainingNet_Chain"
 )
 
 # ============================================
@@ -100,7 +100,7 @@ for repo in RG_Gateway RG_Auth RG_Billing RG_Chat RG_LLM_Service RG_Memory RG_Us
             RG_Workflow RG_Storage RG_Notifications RG_Crypto RG_DSID_Blockchain RG_DSID_Node RG_Code_Execution \
             RG_Agent_Engine RG_agent_architect RG_Sandbox_Runner RG_AST_analysis \
             RG_Internal_Invarients_SIM RG_Users_Invarients_SIM RG_Ed_Service \
-            RG_Mining RG_lighthouse RG_external_blockchain; do
+            RG_TrainingNet_Mining RG_TrainingNet_Lighthouse RG_TrainingNet_Chain; do
     if [ -d "$repo" ]; then
         echo -n "  $repo ... "
         cd "$repo"
