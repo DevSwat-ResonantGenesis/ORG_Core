@@ -52,7 +52,8 @@ git@github-devswat:DevSwat-ResonantGenesis/genesis2026_production_backend.git
 | `memory_service` | RG_Memory | 8000 | Semantic Memory Universe |
 | `llm_service` | RG_LLM_Service | 8000 | LLM provider abstraction |
 | `mining_service` | RG_Mining | 8000 | Distributed ML training + RGT mining |
-| `blockchain_service` | RG_Blockchain | 8000 | DSID-P blockchain protocol |
+| `blockchain_service` | RG_DSID_Blockchain | 8000 | DSID-P blockchain protocol |
+| `dsid_node` | RG_DSID_Node | 8081 | DSID external chain node (Base Sepolia) |
 | `external_blockchain_service` | RG_external_blockchain | 8000 | External chain bridges |
 | `crypto_service` | RG_Crypto | 8000 | Crypto identity + wallet |
 | `notification_service` | RG_Notifications | 8000 | Push/email notifications |

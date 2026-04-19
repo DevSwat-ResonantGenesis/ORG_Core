@@ -291,7 +291,7 @@ services:
     - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   blockchain_service:
     build:
-      context: /home/deploy/RG_Blockchain
+      context: /home/deploy/RG_DSID_Blockchain
       dockerfile: Dockerfile
     container_name: blockchain_service
     env_file:
@@ -309,6 +309,34 @@ services:
       - python
       - -c
       - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  dsid_node:
+    build:
+      context: /home/deploy/RG_DSID_Node
+      dockerfile: Dockerfile
+    container_name: dsid_node
+    env_file:
+    - ./.env.production
+    environment:
+      NODE_ENV: production
+      NODE_HOST: 0.0.0.0
+      NODE_PORT: 8081
+      BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
+      MEMORY_SERVICE_URL: http://memory_service:8000
+    depends_on:
+    - blockchain_service
+    - memory_service
+    networks:
+    - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8081/status
       interval: 30s
       timeout: 10s
       retries: 3

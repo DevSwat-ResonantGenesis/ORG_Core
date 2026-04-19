@@ -37,7 +37,8 @@ REPOS=(
     "RG_Storage"
     "RG_Notifications"
     "RG_Crypto"
-    "RG_Blockchain"
+    "RG_DSID_Blockchain"
+    "RG_DSID_Node"
     "RG_Code_Execution"
     "RG_Agent_Engine"
     "RG_agent_architect"
@@ -96,7 +97,7 @@ cd /home/deploy
 echo "📥 Pulling all repos..."
 FAILED=""
 for repo in RG_Gateway RG_Auth RG_Billing RG_Chat RG_LLM_Service RG_Memory RG_User_Service \
-            RG_Workflow RG_Storage RG_Notifications RG_Crypto RG_Blockchain RG_Code_Execution \
+            RG_Workflow RG_Storage RG_Notifications RG_Crypto RG_DSID_Blockchain RG_DSID_Node RG_Code_Execution \
             RG_Agent_Engine RG_agent_architect RG_Sandbox_Runner RG_AST_analysis \
             RG_Internal_Invarients_SIM RG_Users_Invarients_SIM RG_Ed_Service \
             RG_Mining RG_lighthouse RG_external_blockchain; do
