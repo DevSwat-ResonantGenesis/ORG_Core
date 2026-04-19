@@ -73,7 +73,6 @@ services:
       # GATEWAY_RABBIT_URL: http://rabbit_api_service:8000  # DISABLED
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
       AGENTIC_CHAT_SERVICE_URL: http://rg_agentic_chat:8000
-      GUEST_CHAT_SERVICE_URL: http://rg_public_guest_chat:8010
     depends_on:
       - shared_redis
       - auth_service
@@ -155,8 +154,6 @@ services:
       CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
       NOTIFICATION_SERVICE_URL: http://notification_service:8000
       PYTHONPATH: /app
-    volumes:
-      - /home/deploy/RG_Platform_Tools:/app/platform_tools:ro
     depends_on:
       - shared_redis
       - llm_service
@@ -601,7 +598,6 @@ services:
       PYTHONPATH: /app
     volumes:
       - build_projects:/opt/resonant/user_workspaces
-      - /home/deploy/RG_Platform_Tools:/app/platform_tools:ro
     depends_on:
       - shared_redis
       - llm_service
@@ -658,32 +654,6 @@ services:
       timeout: 10s
       retries: 3
 
-  # Public Guest Agentic Chat (standalone, from DevSwat GitHub)
-  rg_public_guest_chat:
-    build:
-      context: /home/deploy/RG_Public-Guest-Agentic_Chat
-      dockerfile: Dockerfile
-    container_name: rg_public_guest_chat
-    env_file:
-      - ./.env.production
-    environment:
-      PYTHONPATH: /app
-      RATE_LIMIT_PER_MINUTE: "20"
-      DEFAULT_MODEL: "llama-3.3-70b-versatile"
-      PORT: "8010"
-      LLM_SERVICE_URL: http://llm_service:8000
-    volumes:
-      - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
-    depends_on:
-      - llm_service
-    networks:
-      - app-network
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=5)"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # AST Analysis (standalone, extracted from code_visualizer_service)
   rg_ast_analysis:

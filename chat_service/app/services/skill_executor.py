@@ -19,11 +19,8 @@ import httpx
 from .skills_registry import SkillDefinition, skills_registry
 from .skills import INTEGRATION_SKILLS
 
-try:
-    from platform_tools.auth import AuthContext, build_service_headers
-except ImportError:
-    AuthContext = None
-    build_service_headers = None
+
+
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +42,7 @@ class SkillExecutor:
             "image_generation": self._execute_image_generation,
             "memory_search": self._execute_memory_search,
             "memory_library": self._execute_memory_library,
-            "agents_os": self._execute_agents_os,
+            # "agents_os" removed — all agent operations now route through agent_architect
             "agent_architect": self._execute_agent_architect,
             "state_physics": self._execute_state_physics,
             "ide_workspace": self._execute_ide_workspace,
@@ -2302,71 +2299,12 @@ class SkillExecutor:
     async def _execute_rabbit_post(
         self, message: str, user_id: str, context: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """Create a Rabbit post from a chat message using shared tools."""
-        try:
-            from platform_tools.rabbit import tool_create_rabbit_post, tool_list_rabbit_communities
-            from platform_tools.auth import AuthContext
-
-            auth = AuthContext(
-                user_id=user_id,
-                org_id=context.get("org_id"),
-                user_role=str(context.get("user_role", "user")),
-            )
-
-            # Parse title and body from message
-            title, body, community_slug = self._parse_rabbit_post_message(message)
-
-            if not title or not body:
-                # List available communities and return help
-                communities_result = await tool_list_rabbit_communities(auth=auth)
-                community_list = communities_result.get("communities", [])
-                community_names = ", ".join([c["slug"] for c in community_list[:10]]) if community_list else "none found"
-
-                return {
-                    "success": True,
-                    "action": "rabbit_post_help",
-                    "summary": (
-                        "**Create a Rabbit Post**\n\n"
-                        "To create a post, include a title and body:\n"
-                        "`create post titled 'My Title' body 'My content here' in r/community`\n\n"
-                        f"**Available communities:** {community_names}\n"
-                    ),
-                }
-
-            result = await tool_create_rabbit_post(
-                title=title,
-                body=body,
-                community_slug=community_slug,
-                auth=auth,
-            )
-
-            if result.get("success"):
-                return {
-                    "success": True,
-                    "action": "rabbit_post_created",
-                    "post_id": result.get("post_id"),
-                    "summary": f"**Post Created!**\n\n{result.get('message', '')}",
-                }
-            else:
-                return {
-                    "success": False,
-                    "action": "rabbit_post_failed",
-                    "error": result.get("error", "Unknown error"),
-                    "summary": f"Failed to create post: {result.get('error', 'Unknown error')}",
-                }
-
-        except ImportError:
-            return {
-                "success": False,
-                "action": "rabbit_post",
-                "error": "Shared tools not available",
-            }
-        except Exception as e:
-            return {
-                "success": False,
-                "action": "rabbit_post",
-                "error": str(e),
-            }
+        """Create a Rabbit post — Rabbit services currently disabled."""
+        return {
+            "success": False,
+            "action": "rabbit_post",
+            "error": "Rabbit community services are currently disabled",
+        }
 
     # ============================================
     # MODULAR INTEGRATION SKILLS (figma, google_drive, google_calendar, sigma, etc.)
@@ -2427,6 +2365,8 @@ class SkillExecutor:
             "workspace_id": user_id,
             "user_id": user_id,
             "context": context.get("prev_assistant_content", ""),
+            "conversation_history": context.get("recent_messages", []),
+            "user_api_keys": context.get("user_api_keys", {}),
         }
 
         # Try SSE streaming first for real-time progress
@@ -2492,20 +2432,23 @@ class SkillExecutor:
                             continue
 
                         etype = event.get("type", "")
+                        # Architect puts fields at top-level (not nested under "data")
+                        # Support both: top-level and nested "data" for robustness
+                        edata = event.get("data", event)
                         if etype == "text":
-                            accumulated_text += event.get("data", {}).get("content", "")
+                            accumulated_text += edata.get("content", "")
                         elif etype == "tool_call":
-                            actions_taken.append(event.get("data", {}))
+                            actions_taken.append(edata)
                         elif etype == "tool_result":
                             pass  # tracked via actions
                         elif etype == "complete":
-                            resp_data = event.get("data", {}).get("response", {})
+                            resp_data = edata.get("response", edata)
                             accumulated_text = resp_data.get("text", accumulated_text)
                             options_data = resp_data.get("options")
                             if options_data:
                                 result["present_options"] = self._map_architect_options(options_data)
                         elif etype == "error":
-                            err = event.get("data", {}).get("error", "Unknown error")
+                            err = edata.get("error", edata.get("message", "Unknown error"))
                             result["error"] = err
 
             if accumulated_text:
