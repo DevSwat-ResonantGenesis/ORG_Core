@@ -1,56 +1,41 @@
 version: '3.8'
-
-# ============================================
-# UNIFIED PRODUCTION DOCKER COMPOSE
-# Single file for ALL services - NO blue/green complexity
-# ============================================
-
 networks:
   app-network:
     driver: bridge
-
 volumes:
-  redis_data:
-  build_projects:
-  blockchain_node_data:
-  v8_data:
-  v8_model:
-
+  redis_data: null
+  build_projects: null
+  blockchain_node_data: null
+  v8_data: null
+  v8_model: null
 services:
-  # ============================================
-  # INFRASTRUCTURE
-  # ============================================
-  
   shared_redis:
     image: redis:7-alpine
     container_name: shared_redis
     command: redis-server --appendonly yes
     volumes:
-      - redis_data:/data
+    - redis_data:/data
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test:
+      - CMD
+      - redis-cli
+      - ping
       interval: 10s
       timeout: 5s
       retries: 3
-
-  # ============================================
-  # GATEWAY (Main Entry Point - Port 8001)
-  # ============================================
-  
   gateway:
     build:
       context: /home/deploy/RG_Gateway
       dockerfile: Dockerfile
     container_name: gateway
     ports:
-      - "8001:8000"
+    - 8001:8000
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
-      # No DEPLOYMENT_COLOR - use simple container names
       REDIS_URL: redis://shared_redis:6379/0
       GATEWAY_AUTH_URL: http://auth_service:8000
       GATEWAY_CHAT_URL: http://chat_service:8000
@@ -70,78 +55,80 @@ services:
       GATEWAY_BUILD_URL: http://build_service:8003
       GATEWAY_CODE_EXECUTION_URL: http://code_execution_service:8002
       GATEWAY_AGENT_ENGINE_URL: http://agent_engine_service:8000
-      # GATEWAY_RABBIT_URL: http://rabbit_api_service:8000  # DISABLED
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
       AGENTIC_CHAT_SERVICE_URL: http://rg_agentic_chat:8000
     depends_on:
-      - shared_redis
-      - auth_service
+    - shared_redis
+    - auth_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # RABBIT SERVICES (Private Reddit-like Platform)
-  # DISABLED — re-enable when needed to free server resources
-  # ============================================
-
-  # ============================================
-  # CORE SERVICES
-  # ============================================
-
   auth_service:
     build:
       context: /home/deploy/RG_Auth
       dockerfile: Dockerfile
     container_name: auth_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${AUTH_DATABASE_URL}
+      AUTH_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   billing_service:
     build:
       context: /home/deploy/RG_Billing
       dockerfile: Dockerfile
     container_name: billing_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${BILLING_DATABASE_URL}
+      BILLING_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
       AUTH_SERVICE_URL: http://auth_service:8000
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   chat_service:
     build:
       context: /home/deploy/RG_Chat
       dockerfile: Dockerfile
     container_name: chat_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${CHAT_DATABASE_URL}
+      CHAT_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
       LLM_SERVICE_URL: http://llm_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
@@ -155,432 +142,478 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification_service:8000
       PYTHONPATH: /app
     depends_on:
-      - shared_redis
-      - llm_service
-      - memory_service
-      - auth_service
+    - shared_redis
+    - llm_service
+    - memory_service
+    - auth_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
+    volumes:
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   llm_service:
     build:
       context: /home/deploy/RG_LLM_Service
       dockerfile: Dockerfile
     container_name: llm_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
       AUTH_SERVICE_URL: http://auth_service:8000
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   memory_service:
     build:
       context: /home/deploy/RG_Memory
       dockerfile: Dockerfile
     container_name: memory_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${MEMORY_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   user_service:
     build:
       context: /home/deploy/RG_User_Service
       dockerfile: Dockerfile
     container_name: user_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${USER_DATABASE_URL}
+      USER_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # BUSINESS SERVICES
-  # ============================================
-
   cognitive_service:
     build:
       context: /home/deploy/RG_Cognitive
       dockerfile: Dockerfile
     container_name: cognitive_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${COGNITIVE_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      COGNITIVE_DB_POOL_CLASS: "null"
+      COGNITIVE_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   workflow_service:
     build:
       context: /home/deploy/RG_Workflow
       dockerfile: Dockerfile
     container_name: workflow_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${WORKFLOW_DATABASE_URL}
+      WORKFLOW_DB_POOL_CLASS: 'null'
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   ml_service:
     build:
       context: /home/deploy/RG_ML_Service
       dockerfile: Dockerfile
     container_name: ml_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${ML_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      ML_DB_POOL_CLASS: "null"
+      ML_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   storage_service:
     build:
       context: /home/deploy/RG_Storage
       dockerfile: Dockerfile
     container_name: storage_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   ed_service:
     build:
       context: /home/deploy/RG_Ed_Service
       dockerfile: Dockerfile
     container_name: ed_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${ED_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      ED_DB_POOL_CLASS: "null"
+      ED_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
+    volumes:
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   marketplace_service:
     build:
       context: /home/deploy/RG_Marketplace
       dockerfile: Dockerfile
     container_name: marketplace_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${MARKETPLACE_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      MARKETPLACE_DB_POOL_CLASS: "null"
+      MARKETPLACE_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   blockchain_service:
     build:
       context: /home/deploy/RG_Blockchain
       dockerfile: Dockerfile
     container_name: blockchain_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${BLOCKCHAIN_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      BLOCKCHAIN_DB_POOL_CLASS: "null"
+      BLOCKCHAIN_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   notification_service:
     build:
       context: /home/deploy/RG_Notifications
       dockerfile: Dockerfile
     container_name: notification_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${NOTIFICATION_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      NOTIFICATION_DB_POOL_CLASS: "null"
+      NOTIFICATION_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   crypto_service:
     build:
       context: /home/deploy/RG_Crypto
       dockerfile: Dockerfile
     container_name: crypto_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${CRYPTO_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      CRYPTO_DB_POOL_CLASS: "null"
+      CRYPTO_DB_POOL_CLASS: 'null'
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # SPECIALIZED SERVICES
-  # ============================================
-
-  # Internal Invariants SIM (RARA) — standalone, extracted from rara_service
   rg_internal_invarients_sim:
     build:
       context: /home/deploy/RG_Internal_Invarients_SIM
       dockerfile: Dockerfile
     container_name: rg_internal_invarients_sim
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
       AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
       HASH_SPHERE_URL: http://rg_users_invarients_sim:8091
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8093/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8093/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # Users Invariants SIM — standalone, extracted from state_physics_service
   rg_users_invarients_sim:
     build:
       context: /home/deploy/RG_Users_Invarients_SIM
       dockerfile: Dockerfile
     container_name: rg_users_invarients_sim
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8091/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   user_memory_service:
     build:
       context: /home/deploy/RG_User_Memory
       dockerfile: Dockerfile
     container_name: user_memory_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8094/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8094/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   ide_service:
     build:
       context: /home/deploy/RG_Axtention_IDE
       dockerfile: Dockerfile
     container_name: ide_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       PYTHONPATH: /app
       LLM_SERVICE_URL: http://llm_service:8000
     volumes:
-      - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
     depends_on:
-      - llm_service
+    - llm_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   build_service:
     build:
       context: /home/deploy/RG_Build_Service
       dockerfile: Dockerfile
     container_name: build_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     volumes:
-      - build_projects:/tmp/resonant_projects
+    - build_projects:/tmp/resonant_projects
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8003/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   code_execution_service:
     build:
       context: /home/deploy/RG_Code_Execution
       dockerfile: Dockerfile
     container_name: code_execution_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       REDIS_URL: redis://shared_redis:6379/0
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - /tmp/rg_code_exec:/tmp/rg_code_exec
+    - /var/run/docker.sock:/var/run/docker.sock
+    - /tmp/rg_code_exec:/tmp/rg_code_exec
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8002/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # AGENT & AI SERVICES
-  # ============================================
-
   agent_architect:
     build:
       context: /home/deploy/RG_agent_architect
       dockerfile: Dockerfile
     container_name: agent_architect
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
       LLM_SERVICE_URL: http://llm_service:8000
-      AUTH_SERVICE_URL: http://auth_service:8000
       BILLING_SERVICE_URL: http://billing_service:8000
       BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
-      NOTIFICATION_SERVICE_URL: http://notification_service:8000
-      CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
-      STORAGE_SERVICE_URL: http://storage_service:8000
-      WORKFLOW_SERVICE_URL: http://workflow_service:8000
-      GATEWAY_URL: http://gateway:8000
-      SANDBOX_RUNNER_URL: http://sandbox_runner_service:9001
-      AST_ANALYSIS_SERVICE_URL: http://rg_ast_analysis:8000
-      ED_SERVICE_URL: http://ed_service:8000
+      AUTH_SERVICE_URL: http://auth_service:8000
       PYTHONPATH: /app
     depends_on:
-      - llm_service
-      - agent_engine_service
-      - memory_service
+    - llm_service
+    - agent_engine_service
+    - memory_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
+    volumes:
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   agent_engine_service:
     build:
       context: /home/deploy/RG_Agent_Engine
       dockerfile: Dockerfile
     container_name: agent_engine_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${AGENT_DATABASE_URL}
       REDIS_URL: redis://shared_redis:6379/0
-      AGENT_ENGINE_DB_POOL_CLASS: "null"
+      AGENT_ENGINE_DB_POOL_CLASS: 'null'
       LLM_SERVICE_URL: http://llm_service:8000
       MEMORY_SERVICE_URL: http://memory_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
@@ -591,78 +624,113 @@ services:
       NOTIFICATION_SERVICE_URL: http://notification_service:8000
       CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
       SANDBOX_RUNNER_URL: http://sandbox_runner_service:9001
-      AGENT_ENGINE_DOCKER_PER_RUN_SANDBOX_ENABLED: "true"
-      AGENT_ENGINE_ENABLE_SCHEDULER: "true"
-      AGENT_ENGINE_ENABLE_AUTONOMOUS_DAEMON: "true"
+      AGENT_ENGINE_DOCKER_PER_RUN_SANDBOX_ENABLED: 'true'
+      AGENT_ENGINE_ENABLE_SCHEDULER: 'true'
+      AGENT_ENGINE_ENABLE_AUTONOMOUS_DAEMON: 'true'
       DISCORD_BOT_CLIENT_ID: ${DISCORD_BOT_CLIENT_ID:-}
       PYTHONPATH: /app
     volumes:
-      - build_projects:/opt/resonant/user_workspaces
+    - build_projects:/opt/resonant/user_workspaces
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
     depends_on:
-      - shared_redis
-      - llm_service
-      - auth_service
+    - shared_redis
+    - llm_service
+    - auth_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # DISCORD BRIDGE (Bot ↔ Agent Engine)
-  # ============================================
-
+  agent_engine_celery_worker:
+    build:
+      context: /home/deploy/RG_Agent_Engine
+      dockerfile: Dockerfile
+    container_name: agent_engine_celery_worker
+    command:
+    - celery
+    - -A
+    - app.celery_app:celery_app
+    - worker
+    - --loglevel=info
+    - --concurrency=4
+    - -Q
+    - default,agents,agents.high,agents.low,scheduled
+    env_file:
+    - ./.env.production
+    environment:
+      DATABASE_URL: ${AGENT_DATABASE_URL}
+      REDIS_URL: redis://shared_redis:6379/0
+      AGENT_ENGINE_DB_POOL_CLASS: 'null'
+      LLM_SERVICE_URL: http://llm_service:8000
+      MEMORY_SERVICE_URL: http://memory_service:8000
+      AUTH_SERVICE_URL: http://auth_service:8000
+      BILLING_SERVICE_URL: http://billing_service:8000
+      CODE_EXECUTION_SERVICE_URL: http://code_execution_service:8002
+      SANDBOX_RUNNER_URL: http://sandbox_runner_service:9001
+      PYTHONPATH: /app
+    depends_on:
+    - shared_redis
+    - agent_engine_service
+    networks:
+    - app-network
+    restart: unless-stopped
+    volumes:
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   discord_bridge:
     build:
       context: /home/deploy/RG_Discord_Bridge
       dockerfile: Dockerfile
     container_name: discord_bridge
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
       DISCORD_AGENT_ID: ${DISCORD_AGENT_ID:-}
       DISCORD_OWNER_USER_ID: ${DISCORD_OWNER_USER_ID:-}
       DISCORD_ALLOWED_CHANNELS: ${DISCORD_ALLOWED_CHANNELS:-}
       AGENT_ENGINE_URL: http://agent_engine_service:8000
-      POLL_INTERVAL_SECONDS: "2"
-      POLL_TIMEOUT_SECONDS: "60"
+      POLL_INTERVAL_SECONDS: '2'
+      POLL_TIMEOUT_SECONDS: '60'
     depends_on:
-      - agent_engine_service
+    - agent_engine_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
-
   sandbox_runner_service:
     build:
       context: /home/deploy/RG_Sandbox_Runner
       dockerfile: Dockerfile
     container_name: sandbox_runner_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
+    - /var/run/docker.sock:/var/run/docker.sock
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9001/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:9001/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-
-  # AST Analysis (standalone, extracted from code_visualizer_service)
   rg_ast_analysis:
     build:
       context: /home/deploy/RG_AST_analysis
       dockerfile: Dockerfile
     container_name: rg_ast_analysis
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       DATABASE_URL: ${DATABASE_URL}
       CODE_VISUALIZER_DATABASE_URL: postgresql://doadmin:${DB_PASSWORD:-YOUR_DB_PASSWORD}@resonant-db-do-user-18031534-0.g.db.ondigitalocean.com:25060/defaultdb?sslmode=require
@@ -673,155 +741,149 @@ services:
       BILLING_SERVICE_URL: http://billing_service:8000
       STORAGE_SERVICE_URL: http://storage_service:8000/api/storage
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # V8 API SERVICE (ResonantGenesis V8)
-  # ============================================
-
   v8_api_service:
     build:
       context: /home/deploy/RG_V8_API
       dockerfile: Dockerfile
     container_name: v8_api_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
-      PORT: "8080"
+      PORT: '8080'
     volumes:
-      - v8_data:/app/data
-      - v8_model:/app/model
+    - v8_data:/app/data
+    - v8_model:/app/model
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8080/', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # OPENCLAW INTEGRATION SERVICE (Standalone, Isolated)
-  # ============================================
-  # Can be disabled via OPENCLAW_SERVICE_ENABLED=false without affecting anything else
-
   openclaw_service:
     build:
       context: /home/deploy/RG_OpenClaw
       dockerfile: Dockerfile
     container_name: openclaw_service
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       AGENT_ENGINE_URL: http://agent_engine_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
-      MEMORY_SERVICE_URL: http://memory_service:8000
-      BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
-      MARKETPLACE_SERVICE_URL: http://marketplace_service:8000
-      LLM_SERVICE_URL: http://llm_service:8000
-      RARA_SERVICE_URL: ${RARA_SERVICE_URL:-http://rg_internal_invarients_sim:8093}
-      INTERNAL_SERVICE_KEY: ${INTERNAL_SERVICE_KEY:-}
-      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-dev-swat.com}
+      PLATFORM_DOMAIN: ${PLATFORM_DOMAIN:-resonantgenesis.xyz}
       OPENCLAW_SERVICE_ENABLED: ${OPENCLAW_SERVICE_ENABLED:-true}
     depends_on:
-      - agent_engine_service
-      - memory_service
+    - agent_engine_service
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # BLOCKCHAIN NODE
-  # ============================================
-
   blockchain_node:
     build:
       context: /home/deploy/RG_Blockchain_Node
       dockerfile: Dockerfile
     container_name: blockchain_node
     ports:
-      - "8081:8081"
+    - 8081:8081
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       NODE_ENV: production
       NODE_HOST: 0.0.0.0
       NODE_PORT: 8081
     volumes:
-      - blockchain_node_data:/app/data
+    - blockchain_node_data:/app/data
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/status"]
+      test:
+      - CMD
+      - curl
+      - -f
+      - http://localhost:8081/status
       interval: 30s
       timeout: 10s
       retries: 3
-
-  # ============================================
-  # DECENTRALIZED TRAINING MESH
-  # ============================================
-
   lighthouse_service:
     build:
       context: /home/deploy/RG_lighthouse
       dockerfile: Dockerfile
     container_name: lighthouse_service
     ports:
-      - "127.0.0.1:8700:8000"
+    - 127.0.0.1:8700:8000
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       RG_ENV: production
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/lighthouse/health', timeout=5)"]
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/lighthouse/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   external_blockchain_service:
     build:
       context: /home/deploy/RG_external_blockchain
       dockerfile: Dockerfile
     container_name: external_blockchain_service
     ports:
-      - "127.0.0.1:8702:8000"
+    - 127.0.0.1:8702:8000
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       RG_ENV: production
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
-
   mining_service:
     build:
       context: /home/deploy/RG_Mining
       dockerfile: Dockerfile
     container_name: mining_service
     ports:
-      - "127.0.0.1:8701:8000"
+    - 127.0.0.1:8701:8000
     env_file:
-      - ./.env.production
+    - ./.env.production
     environment:
       RG_ENV: production
       LIGHTHOUSE_URL: http://lighthouse_service:8000
@@ -835,10 +897,14 @@ services:
       external_blockchain_service:
         condition: service_healthy
     networks:
-      - app-network
+    - app-network
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/mining/health', timeout=5)"]
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/mining/health', timeout=5)
       interval: 30s
       timeout: 10s
       retries: 3
