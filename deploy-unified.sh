@@ -50,6 +50,7 @@ REPOS=(
     "RG_TrainingNet_Mining"
     "RG_TrainingNet_Lighthouse"
     "RG_TrainingNet_Chain"
+    "RG_Marketplace"
 )
 
 # ============================================
@@ -100,7 +101,8 @@ for repo in RG_Gateway RG_Auth RG_Billing RG_Chat RG_LLM_Service RG_Memory RG_Us
             RG_Workflow RG_Storage RG_Notifications RG_Crypto RG_DSID_Blockchain RG_DSID_Node RG_Code_Execution \
             RG_Agent_Engine RG_agent_architect RG_Sandbox_Runner RG_AST_analysis \
             RG_Internal_Invarients_SIM RG_Users_Invarients_SIM RG_Ed_Service \
-            RG_TrainingNet_Mining RG_TrainingNet_Lighthouse RG_TrainingNet_Chain; do
+            RG_TrainingNet_Mining RG_TrainingNet_Lighthouse RG_TrainingNet_Chain \
+            RG_Marketplace; do
     if [ -d "$repo" ]; then
         echo -n "  $repo ... "
         cd "$repo"

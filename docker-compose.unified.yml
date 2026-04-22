@@ -42,6 +42,7 @@ services:
       GATEWAY_USER_URL: http://user_service:8000
       GATEWAY_WORKFLOW_URL: http://workflow_service:8000
       GATEWAY_STORAGE_URL: http://storage_service:8000
+      GATEWAY_MARKETPLACE_URL: http://marketplace_service:8000
       GATEWAY_BLOCKCHAIN_URL: http://blockchain_service:8000
       GATEWAY_NOTIFICATION_URL: http://notification_service:8000
       GATEWAY_CRYPTO_URL: http://crypto_service:8000
@@ -289,6 +290,29 @@ services:
       retries: 3
     volumes:
     - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
+  marketplace_service:
+    build:
+      context: /home/deploy/RG_Marketplace
+      dockerfile: Dockerfile
+    container_name: marketplace_service
+    env_file:
+    - ./.env.production
+    environment:
+      DATABASE_URL: ${MARKETPLACE_DATABASE_URL}
+      REDIS_URL: redis://shared_redis:6379/0
+      MARKETPLACE_DB_POOL_CLASS: 'null'
+    networks:
+    - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
   blockchain_service:
     build:
       context: /home/deploy/RG_DSID_Blockchain
