@@ -176,6 +176,8 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    volumes:
+    - /home/deploy/RG_UnifiedLLMClient/src/rg_llm:/app/rg_llm:ro
   memory_service:
     build:
       context: /home/deploy/RG_Memory
