@@ -51,6 +51,9 @@ REPOS=(
     "RG_TrainingNet_Lighthouse"
     "RG_TrainingNet_Chain"
     "RG_Marketplace"
+    "RG_OpenClaw"
+    "RG_Public-Guest-Agentic_Chat"
+    "RG_Discord_Bridge"
 )
 
 # ============================================

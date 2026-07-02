@@ -748,3 +748,66 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+
+  # ────────────────────────────────────────────────────────────────
+  # Previously orphaned services — folded into the unified project so a
+  # stray `--remove-orphans` can't wipe them. Config matches the live
+  # containers (build context + Dockerfile CMD + app-network). No command
+  # override: each image's Dockerfile CMD is authoritative.
+  # ────────────────────────────────────────────────────────────────
+  openclaw_service:
+    build:
+      context: /home/deploy/RG_OpenClaw
+      dockerfile: Dockerfile
+    container_name: openclaw_service
+    env_file:
+    - ./.env.production
+    environment:
+      RG_ENV: production
+    networks:
+    - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  public_guest_chat_service:
+    build:
+      context: /home/deploy/RG_Public-Guest-Agentic_Chat
+      dockerfile: Dockerfile
+    container_name: public_guest_chat_service
+    env_file:
+    - ./.env.production
+    environment:
+      RG_ENV: production
+    networks:
+    - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python3
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8010/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  discord_bridge_service:
+    build:
+      context: /home/deploy/RG_Discord_Bridge
+      dockerfile: Dockerfile
+    container_name: discord_bridge_service
+    env_file:
+    - ./.env.production
+    environment:
+      RG_ENV: production
+    networks:
+    - app-network
+    restart: unless-stopped
