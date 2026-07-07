@@ -8,7 +8,7 @@ echo "🚀 Manual Blue-Green Deployment"
 echo "============================"
 
 # Configuration
-DROPLET_IP="dev-swat.com"
+DROPLET_IP="resonant.dev-swat.com"
 DROPLET_USER="deploy"
 
 echo "🌐 Target: $DROPLET_IP"
@@ -132,14 +132,14 @@ if docker ps --format "table {{.Names}}" | grep -q "blue_gateway\|green_gateway"
     
     # Verify health
     echo "🔍 Verifying health..."
-    if curl -f https://dev-swat.com/health > /dev/null 2>&1; then
+    if curl -f https://resonant.dev-swat.com/health > /dev/null 2>&1; then
         echo "✅ Health check passed"
     else
         echo "⚠️ Health check failed but containers are running"
     fi
     
     echo "🎉 Deployment completed successfully!"
-    echo "🌐 Platform available at: https://dev-swat.com"
+    echo "🌐 Platform available at: https://resonant.dev-swat.com"
 else
     echo "❌ Deployment failed"
     exit 1
@@ -150,8 +150,8 @@ EOF
 if [ $? -eq 0 ]; then
     log "✅ Deployment completed successfully"
     echo ""
-    echo "🌐 Check your platform at: https://dev-swat.com"
-    echo "🔍 Health check: https://dev-swat.com/health"
+    echo "🌐 Check your platform at: https://resonant.dev-swat.com"
+    echo "🔍 Health check: https://resonant.dev-swat.com/health"
 else
     error "❌ Deployment failed"
     exit 1

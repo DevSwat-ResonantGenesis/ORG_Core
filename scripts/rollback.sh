@@ -73,7 +73,7 @@ log "========================================"
 
 # Verify
 sleep 5
-if curl -sf https://dev-swat.com/health > /dev/null 2>&1; then
+if curl -sf https://resonant.dev-swat.com/health > /dev/null 2>&1; then
     log "✅ Frontend is accessible after rollback"
 else
     error "Frontend is not accessible after rollback!"

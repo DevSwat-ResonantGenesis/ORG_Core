@@ -175,7 +175,7 @@ non-platform-funded provider; (e) no-preference uses task routing.
 - **#9:** expand cleanup sweep to remaining ~30 RG_* repos (report-as-.sh, stale md/txt, .DS_Store,
   backups, tracked caches). Policy: auto-delete safe, `git rm` (recoverable), ask on ambiguous code-level dead code.
 - **#10:** full SDK green-path test: register throwaway user+org, mint real `RG-<prefix>.<secret>` key
-  (`POST /auth/api-keys`, needs user JWT), run SDK ingest/recall against `https://dev-swat.com/api/v1`
+  (`POST /auth/api-keys`, needs user JWT), run SDK ingest/recall against `https://resonant.dev-swat.com/api/v1`
   for a true 200, then clean up.
 
 ---
@@ -194,5 +194,5 @@ non-platform-funded provider; (e) no-preference uses task routing.
 ## Service call map (current)
 - Chat entry `POST /message/stream` (`RG_Chat/app/routers/resonant_chat.py`) → memory `POST memory_service:8000/memory/hash-sphere/extract` → architect `POST agent_architect:8000/api/message/stream` (`tool_executor.py:1488`) → LLM via `rg_llm`.
 - Architect build: `Orchestrator` → `BuildPipeline` (6 phases) → `Builder.build()` → `agent_engine_service:8000/agents/`.
-- SDK (`RG_Memory/sdk`): base `https://dev-swat.com/api/v1`, `Authorization: Bearer RG-...`; gateway validates via `auth_service /auth/api-keys/verify` (`RG_Gateway/app/auth_middleware.py`).
+- SDK (`RG_Memory/sdk`): base `https://resonant.dev-swat.com/api/v1`, `Authorization: Bearer RG-...`; gateway validates via `auth_service /auth/api-keys/verify` (`RG_Gateway/app/auth_middleware.py`).
 - Public edge: nginx routes `/api/`, `/api/v1/`, `/api/resonant-chat/` → gateway `:8001`. Bare `/memory/...` publicly = 405.

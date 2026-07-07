@@ -94,7 +94,7 @@ async def main():
     print("\n" + "="*60)
     print("SUPERUSER ACCOUNT READY")
     print("="*60)
-    print(f"URL: https://dev-swat.com/login")
+    print(f"URL: https://resonant.dev-swat.com/login")
     print(f"Email: {email}")
     print(f"Password: {password}")
     print("="*60)
