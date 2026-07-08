@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # SSL Certificate Setup Script for Production
-# Sets up Let's Encrypt SSL certificates for resonant.dev-swat.com
+# Sets up Let's Encrypt SSL certificates for dev-swat.com
 
 set -e
 
@@ -11,8 +11,8 @@ echo "=========================================="
 echo ""
 
 # Configuration
-DOMAIN="resonant.dev-swat.com"
-EMAIL="info@resonant.dev-swat.com"
+DOMAIN="dev-swat.com"
+EMAIL="info@dev-swat.com"
 WEBROOT="/var/www/certbot"
 NGINX_CONF="/etc/nginx/sites-available"
 SSL_PATH="/etc/letsencrypt/live/$DOMAIN"

@@ -3,7 +3,7 @@
 
 global:
   environment: production
-  domain: resonant.dev-swat.com
+  domain: dev-swat.com
   imageRegistry: ghcr.io/devswat
   imageTag: latest
   imagePullPolicy: IfNotPresent
@@ -23,7 +23,7 @@ gateway:
       cpu: 1000m
       memory: 512Mi
   env:
-    AUTH_FRONTEND_URL: "https://resonant.dev-swat.com"
+    AUTH_FRONTEND_URL: "https://dev-swat.com"
     TENANT_ISOLATION_ENABLED: "true"
     TENANT_MAX_RPM: "600"
 
@@ -216,7 +216,7 @@ ingress:
     nginx.ingress.kubernetes.io/proxy-read-timeout: "120"
     nginx.ingress.kubernetes.io/websocket-services: gateway
   hosts:
-    - host: api.resonant.dev-swat.com
+    - host: api.dev-swat.com
       paths:
         - path: /
           pathType: Prefix
@@ -224,7 +224,7 @@ ingress:
   tls:
     - secretName: genesis2026-tls
       hosts:
-        - api.resonant.dev-swat.com
+        - api.dev-swat.com
 
 # ============== MONITORING ==============
 

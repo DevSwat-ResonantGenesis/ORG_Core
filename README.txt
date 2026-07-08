@@ -1,6 +1,6 @@
 # RG_core — Production Infrastructure & Deployment
 
-> **Part of the [ResonantGenesis](https://resonant.dev-swat.com) platform** — Central deployment hub for the entire microservices platform.
+> **Part of the [ResonantGenesis](https://dev-swat.com) platform** — Central deployment hub for the entire microservices platform.
 
 [![Status: Production](https://img.shields.io/badge/Status-Production-brightgreen.svg)]()
 [![License: RG Source Available](https://img.shields.io/badge/License-RG%20Source%20Available-blue.svg)](LICENSE.txt)
@@ -172,7 +172,7 @@ Local edit → git push → SSH to server → git pull in service repo →
 
 ### Manual Deploy (single service)
 ```bash
-ssh deploy@resonant.dev-swat.com
+ssh deploy@dev-swat.com
 cd /home/deploy/{service_repo}
 git pull origin main
 sudo docker build -t {container_name} .
@@ -185,7 +185,7 @@ sudo docker run -d --name {container_name} --restart unless-stopped \
 
 ### Full Redeploy (all services)
 ```bash
-ssh deploy@resonant.dev-swat.com
+ssh deploy@dev-swat.com
 cd /home/deploy/genesis2026_production_backend
 ./deploy-unified.sh
 ```
@@ -238,4 +238,4 @@ docker compose -f docker-compose.unified.yml logs -f
 
 ---
 
-**Organization**: [DevSwat-ResonantGenesis](https://github.com/DevSwat-ResonantGenesis) | **Platform**: [resonant.dev-swat.com](https://resonant.dev-swat.com)
+**Organization**: [DevSwat-ResonantGenesis](https://github.com/DevSwat-ResonantGenesis) | **Platform**: [dev-swat.com](https://dev-swat.com)

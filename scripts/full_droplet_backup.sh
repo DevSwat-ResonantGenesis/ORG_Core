@@ -274,7 +274,7 @@ sudo nginx -t && sudo systemctl restart nginx
 sudo cp -r /home/deploy/droplet_backup_*/ssl/letsencrypt/* /etc/letsencrypt/
 
 # Option B: Re-issue certs (recommended for new droplet)
-sudo certbot --nginx -d resonant.dev-swat.com -d resonantgenesis.xyz
+sudo certbot --nginx -d dev-swat.com -d resonantgenesis.xyz
 ```
 
 ### 10. Restore frontend
@@ -292,12 +292,12 @@ docker ps
 curl -s http://localhost:8001/api/v1/auth/providers | head -c 200
 
 # Test frontend
-curl -s -o /dev/null -w '%{http_code}' https://resonant.dev-swat.com/
+curl -s -o /dev/null -w '%{http_code}' https://dev-swat.com/
 ```
 
 ## Important Notes
 - Update `.env.production` DATABASE_URL if pointing to a new managed DB
-- Update DNS A records for resonant.dev-swat.com and resonantgenesis.xyz
+- Update DNS A records for dev-swat.com and resonantgenesis.xyz
 - The managed PostgreSQL on DigitalOcean is EXTERNAL — it persists regardless of droplet
 - Redis data is ephemeral (cache) — losing it is OK
 - Blockchain node data is in a Docker volume — restore it or let it re-sync
@@ -320,7 +320,7 @@ echo "Contents:"
 du -sh ${BACKUP_ROOT}/*/ 2>/dev/null | sed 's|.*/||'
 echo ""
 echo "To download this backup to your local machine:"
-echo "  scp -r deploy@resonant.dev-swat.com:${BACKUP_ROOT} ~/Desktop/"
+echo "  scp -r deploy@dev-swat.com:${BACKUP_ROOT} ~/Desktop/"
 echo ""
 echo "To create a compressed archive:"
 echo "  cd /home/deploy && tar czf droplet_backup_${TIMESTAMP}.tar.gz droplet_backup_${TIMESTAMP}/"

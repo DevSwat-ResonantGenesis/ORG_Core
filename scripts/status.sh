@@ -52,7 +52,7 @@ fi
 
 echo ""
 echo "Frontend Status:"
-if curl -sf https://resonant.dev-swat.com/health > /dev/null 2>&1; then
+if curl -sf https://dev-swat.com/health > /dev/null 2>&1; then
     echo -e "  ${GREEN}✅ Accessible${NC}"
 else
     echo -e "  ${RED}❌ Not Accessible${NC}"

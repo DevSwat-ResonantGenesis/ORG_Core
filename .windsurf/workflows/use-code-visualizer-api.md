@@ -17,14 +17,14 @@ Call the CV API via the Docker container (most reliable path):
 
 ```bash
 # Copy your zip into the CV container and upload
-ssh deploy@resonant.dev-swat.com "python3 -c \"
+ssh deploy@dev-swat.com "python3 -c \"
 import zipfile, os
 z = zipfile.ZipFile('/tmp/scan.zip', 'w', zipfile.ZIP_DEFLATED)
 [z.write(os.path.join(r,f), os.path.join(r,f)) for r,dirs,files in os.walk('YOUR_SERVICE_DIR') for f in files if f.endswith('.py') and '__pycache__' not in r]
 z.close()
 \""
-ssh deploy@resonant.dev-swat.com "sudo docker cp /tmp/scan.zip code_visualizer_service:/tmp/scan.zip"
-ssh deploy@resonant.dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/upload \
+ssh deploy@dev-swat.com "sudo docker cp /tmp/scan.zip code_visualizer_service:/tmp/scan.zip"
+ssh deploy@dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/upload \
   -H 'x-user-id: 0a4fbfd4-ee7c-446e-a9c7-9d7e55d6f2a6' \
   -H 'x-user-role: platform_owner' \
   -H 'x-is-superuser: true' \
@@ -35,7 +35,7 @@ ssh deploy@resonant.dev-swat.com "sudo docker exec code_visualizer_service curl 
 **OR** use GitHub scan (requires PAT):
 
 ```bash
-ssh deploy@resonant.dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/github \
+ssh deploy@dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/github \
   -H 'Content-Type: application/json' \
   -H 'x-user-id: 0a4fbfd4-ee7c-446e-a9c7-9d7e55d6f2a6' \
   -H 'x-user-role: platform_owner' \
@@ -51,7 +51,7 @@ ssh deploy@resonant.dev-swat.com "sudo docker exec code_visualizer_service curl 
 ## Step 2 — Extract Exact Locations (No File Reading)
 
 ```bash
-ssh deploy@resonant.dev-swat.com "python3 << 'PYEOF'
+ssh deploy@dev-swat.com "python3 << 'PYEOF'
 import json
 with open('/tmp/cv_full_scan.json') as f:
     d = json.load(f)
@@ -190,10 +190,10 @@ x-is-superuser: true
 
 ```bash
 # 1. Scan repo (15 sec)
-ssh deploy@resonant.dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/github -H 'Content-Type: application/json' -H 'x-user-id: 0a4fbfd4-ee7c-446e-a9c7-9d7e55d6f2a6' -H 'x-user-role: platform_owner' -H 'x-is-superuser: true' -d '{\"repo_url\":\"https://github.com/louienemesh/genesis2026_production_backend_2\",\"token\":\"PAT\",\"branch\":\"main\"}' > /tmp/cv.json"
+ssh deploy@dev-swat.com "sudo docker exec code_visualizer_service curl -s -X POST http://localhost:8000/api/v1/scan/github -H 'Content-Type: application/json' -H 'x-user-id: 0a4fbfd4-ee7c-446e-a9c7-9d7e55d6f2a6' -H 'x-user-role: platform_owner' -H 'x-is-superuser: true' -d '{\"repo_url\":\"https://github.com/louienemesh/genesis2026_production_backend_2\",\"token\":\"PAT\",\"branch\":\"main\"}' > /tmp/cv.json"
 
 # 2. Find target function (2 sec)
-ssh deploy@resonant.dev-swat.com "python3 -c \"
+ssh deploy@dev-swat.com "python3 -c \"
 import json
 nodes = json.load(open('/tmp/cv.json'))['analysis']['nodes']
 [print(n['file_path'], n['line_start'], '-', n['line_end'], '|', n['name']) for n in nodes if 'FUNCTION_NAME' in n.get('name','') and n.get('type') in ('function','method')]

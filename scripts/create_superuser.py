@@ -189,7 +189,7 @@ async def create_superuser():
         print("\n" + "=" * 60)
         print("SUPERUSER ACCOUNT READY")
         print("=" * 60)
-        print(f"Login URL: https://resonant.dev-swat.com/login")
+        print(f"Login URL: https://dev-swat.com/login")
         print(f"Email: {email}")
         print(f"Password: {password}")
         print(f"\nDashboards accessible:")

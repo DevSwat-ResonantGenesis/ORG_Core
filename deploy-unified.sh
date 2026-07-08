@@ -6,7 +6,7 @@ set -euo pipefail
 # Single docker-compose.unified.yml — no blue/green
 # ============================================
 
-DROPLET_IP="resonant.dev-swat.com"
+DROPLET_IP="dev-swat.com"
 DROPLET_USER="deploy"
 DEPLOY_DIR="/home/deploy"
 COMPOSE_DIR="/home/deploy/genesis2026_production_backend"
@@ -215,10 +215,10 @@ docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | head -30
 
 echo ""
 echo "🎉 Deployment complete!"
-echo "🌐 https://resonant.dev-swat.com"
+echo "🌐 https://dev-swat.com"
 DEPLOY_EOF
 
 log "Deployment completed"
 section "DONE"
-echo "🌐 Platform: https://resonant.dev-swat.com"
-echo "🔍 Health:   https://resonant.dev-swat.com/health"
+echo "🌐 Platform: https://dev-swat.com"
+echo "🔍 Health:   https://dev-swat.com/health"
