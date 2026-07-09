@@ -7,6 +7,7 @@ networks:
   # route to app-network - the only way out is through terminal_egress_proxy
   # below, which is the sole container dual-homed on both networks.
   terminal_egress_net:
+    name: terminal_egress_net
     driver: bridge
     internal: true
 volumes:
