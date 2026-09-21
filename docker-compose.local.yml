@@ -672,14 +672,12 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://resonant:resonant_db_password_change_me@postgres:5432/resonant
       CODE_VISUALIZER_DATABASE_URL: postgresql://resonant:resonant_db_password_change_me@postgres:5432/resonant
-      MEMORY_DATABASE_URL: postgresql+asyncpg://resonant:resonant_db_password_change_me@memory_postgres:5432/resonant_memory
       REDIS_URL: redis://shared_redis:6379/0
       AST_ANALYSIS_GATEWAY_SECRET: ${CODE_VISUALIZER_GATEWAY_SECRET:-}
     networks:
       - app-network
     depends_on:
       - postgres
-      - memory_postgres
       - shared_redis
     restart: unless-stopped
     healthcheck:
