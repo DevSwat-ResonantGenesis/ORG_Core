@@ -97,7 +97,6 @@ services:
       GATEWAY_IDE_URL: http://ide_service:8000
       GATEWAY_CODE_EXECUTION_URL: http://code_execution_service:8002
       GATEWAY_AGENT_ENGINE_URL: http://agent_engine_service:8000
-      GATEWAY_SUNAPP_URL: http://sunapp_backend:8000
       TERMINAL_SANDBOX_URL: http://terminal_sandbox_service:8000
       TERMINAL_SANDBOX_INTERNAL_SERVICE_KEY: ${TERMINAL_SANDBOX_INTERNAL_SERVICE_KEY}
     depends_on:
@@ -500,7 +499,6 @@ services:
       BILLING_SERVICE_URL: http://billing_service:8000
       BLOCKCHAIN_SERVICE_URL: http://blockchain_service:8000
       AUTH_SERVICE_URL: http://auth_service:8000
-      TOKENROUTER_API_KEY: sk-0ztRer1n2wpIaIcINIWN7CFfFtvaSWGEBkMlsnoFwTIJ8yig
       PYTHONPATH: /app
     depends_on:
     - llm_service
@@ -646,124 +644,6 @@ services:
       TERMINAL_SANDBOX_NETWORK: terminal_egress_net
       TERMINAL_SANDBOX_EGRESS_PROXY_URL: http://terminal_egress_proxy:3128
       AUTH_SERVICE_URL: http://auth_service:8000
-  sunapp_postgres:
-    image: postgres:15-alpine
-    container_name: sunapp_postgres
-    environment:
-      POSTGRES_USER: sunapp
-      POSTGRES_PASSWORD: sunapp_db_password_change_me
-      POSTGRES_DB: sunapp
-    volumes:
-    - sunapp_postgres_data:/var/lib/postgresql/data
-    ports:
-    - 5434:5432
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U sunapp
-      interval: 10s
-      timeout: 5s
-      retries: 5
-  sunapp_backend:
-    build:
-      context: /Users/louie/DS/sunapp-backend
-      dockerfile: Dockerfile
-    container_name: sunapp_backend
-    env_file:
-    - /Users/louie/DS/sunapp-backend/.env
-    environment:
-      DATABASE_URL: postgresql+asyncpg://sunapp:sunapp_db_password_change_me@sunapp_postgres:5432/sunapp
-      SUNAPP_DB_POOL_CLASS: 'null'
-      SUN_API_BASE_URL: https://genesis.sunapp.ai
-      SUN_API_TOKEN: ${SUN_API_TOKEN}
-      CORS_ORIGINS: https://dev-swat.com,https://api.dev-swat.com
-      JWT_SECRET: ${SUNAPP_JWT_SECRET}
-      JWT_ALGORITHM: HS256
-      JWT_EXPIRES_MINUTES: 720
-      UPLOADS_DIR: /app/uploads
-      SEED_ADMIN_EMAIL: admin@dev-swat.com
-      SEED_ADMIN_PASSWORD: change-me-now
-      WHISPER_MODEL_SIZE: base
-      SUN_STYLE_PREFIX: ""
-    depends_on:
-    - sunapp_postgres
-    volumes:
-    - /Users/louie/DS/sunapp-backend/uploads:/app/uploads
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-    image: postgres:15-alpine
-    container_name: sunapp_postgres
-    environment:
-      POSTGRES_USER: sunapp
-      POSTGRES_PASSWORD: sunapp_db_password_change_me
-      POSTGRES_DB: sunapp
-    volumes:
-    - sunapp_postgres_data:/var/lib/postgresql/data
-    ports:
-    - 5434:5432
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD-SHELL
-      - pg_isready -U sunapp
-      interval: 10s
-      timeout: 5s
-      retries: 5
-  sunapp_backend:
-    build:
-      context: /Users/louie/DS/sunapp-backend
-      dockerfile: Dockerfile
-    container_name: sunapp_backend
-    env_file:
-    - /Users/louie/CascadeProjects/RG/RG_core/.env.production
-    environment:
-      DATABASE_URL: postgresql+asyncpg://sunapp:sunapp_db_password_change_me@sunapp_postgres:5432/sunapp
-      SUNAPP_DB_POOL_CLASS: 'null'
-      SUN_API_BASE_URL: https://genesis.sunapp.ai
-      SUN_API_TOKEN: ${SUN_API_TOKEN:-}
-      CORS_ORIGINS: https://dev-swat.com,https://api.dev-swat.com
-      JWT_SECRET: ${SUNAPP_JWT_SECRET:-dev-secret-change-me}
-      JWT_ALGORITHM: HS256
-      JWT_EXPIRES_MINUTES: 720
-      UPLOADS_DIR: /app/uploads
-      SEED_ADMIN_EMAIL: admin@dev-swat.com
-      SEED_ADMIN_PASSWORD: change-me-now
-      WHISPER_MODEL_SIZE: base
-      SUN_STYLE_PREFIX: ""
-    depends_on:
-    - sunapp_postgres
-    volumes:
-    - /Users/louie/DS/sunapp-backend/uploads:/app/uploads
-    networks:
-    - app-network
-    restart: unless-stopped
-    healthcheck:
-      test:
-      - CMD
-      - python
-      - -c
-      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      TERMINAL_SANDBOX_NETWORK: terminal_egress_net
-      TERMINAL_SANDBOX_EGRESS_PROXY_URL: http://terminal_egress_proxy:3128
-      AUTH_SERVICE_URL: http://auth_service:8000
       STORAGE_SERVICE_URL: http://storage_service:8000
       BILLING_SERVICE_URL: http://billing_service:8000
       GATEWAY_URL: http://gateway:8000
@@ -800,6 +680,62 @@ services:
     depends_on:
       - postgres
       - shared_redis
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)
+      interval: 30s
+      timeout: 10s
+      retries: 3
+  sunapp_postgres:
+    image: postgres:15-alpine
+    container_name: sunapp_postgres
+    environment:
+      POSTGRES_USER: sunapp
+      POSTGRES_PASSWORD: sunapp_db_password_change_me
+      POSTGRES_DB: sunapp
+    volumes:
+    - sunapp_postgres_data:/var/lib/postgresql/data
+    ports:
+    - 5434:5432
+    networks:
+    - app-network
+    restart: unless-stopped
+    healthcheck:
+      test:
+      - CMD-SHELL
+      - pg_isready -U sunapp
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  sunapp_backend:
+    build:
+      context: /Users/louie/DS/sunapp-backend
+      dockerfile: Dockerfile
+    container_name: sunapp_backend
+    environment:
+      DATABASE_URL: postgresql+asyncpg://sunapp:sunapp_db_password_change_me@sunapp_postgres:5432/sunapp
+      SUNAPP_DB_POOL_CLASS: 'null'
+      SUN_API_BASE_URL: https://genesis.sunapp.ai
+      SUN_API_TOKEN: sk_live_kmdsqfe2gtxgppdcxwtf5w_pm7xppyw33etgy2vxj6is25b673vjcxi
+      CORS_ORIGINS: https://dev-swat.com,https://api.dev-swat.com
+      JWT_SECRET: NBSzAQmOLWbhhEagi154O9AuFaKsn-0XGb7Lagiaq44NE54AaALbYD9PLJ6iCiR1
+      JWT_ALGORITHM: HS256
+      JWT_EXPIRES_MINUTES: 720
+      UPLOADS_DIR: /app/uploads
+      SEED_ADMIN_EMAIL: admin@dev-swat.com
+      SEED_ADMIN_PASSWORD: change-me-now
+      WHISPER_MODEL_SIZE: base
+      SUN_STYLE_PREFIX: ""
+    depends_on:
+    - sunapp_postgres
+    volumes:
+    - /Users/louie/DS/sunapp-backend/uploads:/app/uploads
+    networks:
+    - app-network
     restart: unless-stopped
     healthcheck:
       test:
